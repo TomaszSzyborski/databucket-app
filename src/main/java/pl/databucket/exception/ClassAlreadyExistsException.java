@@ -1,10 +1,11 @@
 package pl.databucket.exception;
 
+
 @SuppressWarnings("serial")
-public class ClassAlreadyExistsException extends Exception {
+public class ClassAlreadyExistsException extends AlreadyExistsException {
 
 	public ClassAlreadyExistsException(String className) {
-        super("Class '" + className + "' already exists!");
+        super(AlreadyExistingItem.CLASS , className);
     }
 
 }

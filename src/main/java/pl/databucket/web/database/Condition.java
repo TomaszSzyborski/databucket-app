@@ -29,12 +29,12 @@ public class Condition {
 	}
 	
 	public Condition(Map<String, Object> conditionMap) {
-		this.leftSource = SourceType.fromString((String) conditionMap.get(C.LEFT_SOURCE));
-		this.operator = Operator.fromString((String) conditionMap.get(C.OPRERATOR));
-		this.rightSource = SourceType.fromString((String) conditionMap.get(C.RIGHT_SOURCE));
+		this.leftSource = SourceType.fromString((String) conditionMap.get(Constants.LEFT_SOURCE));
+		this.operator = Operator.fromString((String) conditionMap.get(Constants.OPRERATOR));
+		this.rightSource = SourceType.fromString((String) conditionMap.get(Constants.RIGHT_SOURCE));
 		
-		this.leftValue = conditionMap.get(C.LEFT_VALUE);
-		this.rightValue = conditionMap.get(C.RIGHT_VALUE);
+		this.leftValue = conditionMap.get(Constants.LEFT_VALUE);
+		this.rightValue = conditionMap.get(Constants.RIGHT_VALUE);
 				
 		if ((operator.equals(Operator.in) || operator.equals(Operator.notin)) && rightSource.equals(SourceType.s_const) && !(rightValue instanceof List)) {
 			String rValue = (String) rightValue;

@@ -50,7 +50,7 @@ public class Query {
 	}
 
 	public Query select(String column) throws UnknownColumnException {
-		if (withAlias && !column.equals(COL.COUNT))
+		if (withAlias && !column.equals(Column.COUNT))
 			query = "SELECT " + getFieldWithAlias(column, false);
 		else
 			query = "SELECT " + column;
@@ -115,7 +115,7 @@ public class Query {
 	@SuppressWarnings("unchecked")
 	public Query setProperties(boolean execute, Map<String, Object> payload, Map<String, Object> paramMap) {
 		if (execute) {
-			Map<String, Object> properties = (Map<String, Object>) payload.get(C.UPDATE_PROPS);
+			Map<String, Object> properties = (Map<String, Object>) payload.get(Constants.UPDATE_PROPS);
 			if (properties != null && properties.size() > 0) {
 				// merge for nested paths
 				List<String> nestedPaths = new ArrayList<String>();
@@ -169,7 +169,7 @@ public class Query {
 
 	@SuppressWarnings("unchecked")
 	public Query setPropertiesWithValues(Map<String, Object> payload) {
-		Map<String, Object> properties = (Map<String, Object>) payload.get(C.UPDATE_PROPS);
+		Map<String, Object> properties = (Map<String, Object>) payload.get(Constants.UPDATE_PROPS);
 		if (properties != null && properties.size() > 0) {
 			// merge for nested paths
 			List<String> nestedPaths = new ArrayList<String>();
@@ -217,7 +217,7 @@ public class Query {
 	@SuppressWarnings("unchecked")
 	public Query removeProperties(boolean execute, Map<String, Object> payload) {
 		if (execute) {
-			List<String> remove = (List<String>) payload.get(C.REMOVE_PROPS);
+			List<String> remove = (List<String>) payload.get(Constants.REMOVE_PROPS);
 			if (remove != null && remove.size() > 0) {
 				if (!query.contains("SET"))
 					query += " SET a.properties = JSON_REMOVE(a.properties";
@@ -621,29 +621,29 @@ public class Query {
 				}
 			} else {
 				switch (fieldName) {
-				case COL.TAG_NAME:
+				case Column.TAG_NAME:
 					return "t." + fieldName;
-				case COL.BUNDLE_ID:
-				case COL.TAG_ID:
-				case COL.LOCKED:
-				case COL.LOCKED_BY:
-				case COL.CREATED_AT:
-				case COL.CREATED_BY:
-				case COL.UPDATED_AT:
-				case COL.UPDATED_BY:
-				case COL.PROPERTIES:
+				case Column.BUNDLE_ID:
+				case Column.TAG_ID:
+				case Column.LOCKED:
+				case Column.LOCKED_BY:
+				case Column.CREATED_AT:
+				case Column.CREATED_BY:
+				case Column.UPDATED_AT:
+				case Column.UPDATED_BY:
+				case Column.PROPERTIES:
 					return "a." + fieldName;
 				default:
-					return fieldName.replace(COL.PROPERTIES, "a." + COL.PROPERTIES)
-							.replace(COL.TAG_NAME, "t." + COL.TAG_NAME)
-							.replace(COL.BUNDLE_ID, "a." + COL.BUNDLE_ID)
-							.replace(COL.TAG_ID, "a." + COL.TAG_ID)
-							.replace(COL.LOCKED, "a." + COL.LOCKED)
-							.replace(COL.LOCKED_BY, "a." + COL.LOCKED_BY)
-							.replace(COL.CREATED_AT, "a." + COL.CREATED_AT)
-							.replace(COL.CREATED_BY, "a." + COL.CREATED_BY)
-							.replace(COL.UPDATED_AT, "a." + COL.UPDATED_AT)
-							.replace(COL.UPDATED_BY, "a." + COL.UPDATED_BY);
+					return fieldName.replace(Column.PROPERTIES, "a." + Column.PROPERTIES)
+							.replace(Column.TAG_NAME, "t." + Column.TAG_NAME)
+							.replace(Column.BUNDLE_ID, "a." + Column.BUNDLE_ID)
+							.replace(Column.TAG_ID, "a." + Column.TAG_ID)
+							.replace(Column.LOCKED, "a." + Column.LOCKED)
+							.replace(Column.LOCKED_BY, "a." + Column.LOCKED_BY)
+							.replace(Column.CREATED_AT, "a." + Column.CREATED_AT)
+							.replace(Column.CREATED_BY, "a." + Column.CREATED_BY)
+							.replace(Column.UPDATED_AT, "a." + Column.UPDATED_AT)
+							.replace(Column.UPDATED_BY, "a." + Column.UPDATED_BY);
 				}
 			}
 		}
@@ -776,10 +776,10 @@ public class Query {
 	private String columnsToString(List<Map<String, Object>> columns) throws UnknownColumnException {
 		String result = "";
 		for (Map<String, Object> col : columns)
-			if (col.containsKey(C.TITLE))
-				result += ", " + getFieldWithAlias((String) col.get(C.FIELD), false) + " as '" + col.get(C.TITLE)+ "'";
+			if (col.containsKey(Constants.TITLE))
+				result += ", " + getFieldWithAlias((String) col.get(Constants.FIELD), false) + " as '" + col.get(Constants.TITLE)+ "'";
 			else
-				result += ", " + getFieldWithAlias((String) col.get(C.FIELD), false);
+				result += ", " + getFieldWithAlias((String) col.get(Constants.FIELD), false);
 		return result.substring(2);
 	}
 

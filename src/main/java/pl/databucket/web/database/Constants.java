@@ -1,6 +1,6 @@
 package pl.databucket.web.database;
 
-public class C {
+public class Constants {
 	
 	public static final String TOTAL = "total";
 	public static final String GROUPS = "groups";

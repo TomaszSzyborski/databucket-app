@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,6 +44,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import pl.databucket.exception.AlreadyExistingItem;
+import pl.databucket.exception.AlreadyExistsException;
 import pl.databucket.exception.BucketAlreadyExistsException;
 import pl.databucket.exception.ClassAlreadyExistsException;
 import pl.databucket.exception.ColumnsAlreadyExistsException;
@@ -58,8 +61,8 @@ import pl.databucket.exception.TagAlreadyExistsException;
 import pl.databucket.exception.UnexpectedException;
 import pl.databucket.exception.UnknownColumnException;
 import pl.databucket.exception.ViewAlreadyExistsException;
-import pl.databucket.web.database.C;
-import pl.databucket.web.database.COL;
+import pl.databucket.web.database.Constants;
+import pl.databucket.web.database.Column;
 import pl.databucket.web.database.Condition;
 import pl.databucket.web.database.FieldValidator;
 import pl.databucket.web.database.Operator;
@@ -78,31 +81,32 @@ public class DatabucketServiceIm implements DatabucketService {
 	@Value("${databucket.database.name}")
 	private String databaseName;
 	
-	Logger logger = LoggerFactory.getLogger(DatabucketServiceIm.class);
+	private Logger logger = LoggerFactory.getLogger(DatabucketServiceIm.class);
 	
 	
-	public int createGroup(String userName, String groupName, String description, ArrayList<Integer> buckets) throws GroupAlreadyExistsException, ExceededMaximumNumberOfCharactersException, EmptyInputValueException, Exception {
+	public int createGroup(String userName, String groupName, String description, ArrayList<Integer> buckets)
+			throws GroupAlreadyExistsException, UnknownColumnException, JsonProcessingException {
 		if (isGroupExist(groupName))
 			throw new GroupAlreadyExistsException(groupName);
 		
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.GROUP_NAME, groupName);
-		namedParameters.addValue(COL.CREATED_BY, userName);
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
-		putNotEmpty(namedParameters, COL.BUCKETS, buckets);		
+		namedParameters.addValue(Column.GROUP_NAME, groupName);
+		namedParameters.addValue(Column.CREATED_BY, userName);
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
+		putNotEmpty(namedParameters, Column.BUCKETS, buckets);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.GROUP, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.GROUP_ID});	
-		return keyHolder.getKey().intValue();
-	};
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.GROUP_ID});
+		return (int) Objects.requireNonNull(keyHolder.getKey());
+	}
 	
-	public int deleteGroup(Integer groupId, String userName) throws ItemDoNotExistsException, UnknownColumnException {
-		Condition condition = new Condition(COL.GROUP_ID, Operator.equal, groupId);
+	public int deleteGroup(Integer groupId, String userName) throws UnknownColumnException {
+		Condition condition = new Condition(Column.GROUP_ID, Operator.equal, groupId);
 
-		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		Map<String, Object> paramMap = new HashMap<>();
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Set group as deleted
 		Query query = new Query(TAB.GROUP, true)
@@ -118,10 +122,10 @@ public class DatabucketServiceIm implements DatabucketService {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 
 		if (groupId.isPresent()) {
-			conditions.add(new Condition(COL.GROUP_ID, Operator.equal, groupId.get()));	
+			conditions.add(new Condition(Column.GROUP_ID, Operator.equal, groupId.get()));
 		}
 		
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (urlConditions != null)
 			for (Condition condition : urlConditions)
@@ -140,10 +144,10 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> groupList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		convertStringToArray(groupList, COL.BUCKETS);
-		result.put(C.GROUPS, groupList);
+		convertStringToArray(groupList, Column.BUCKETS);
+		result.put(Constants.GROUPS, groupList);
 		
 		return result;	
 	};
@@ -152,19 +156,19 @@ public class DatabucketServiceIm implements DatabucketService {
 	public void modifyGroup(String userName, Integer groupId, LinkedHashMap<String, Object> body)  throws ItemDoNotExistsException, GroupAlreadyExistsException, JsonProcessingException, IncorrectValueException, ExceededMaximumNumberOfCharactersException, DataAccessException, UnknownColumnException {
 		if (isGroupExist(groupId)) {
 
-			if (body.containsKey(COL.GROUP_NAME)) {
-				String newGroupName = (String) body.get(COL.GROUP_NAME);
+			if (body.containsKey(Column.GROUP_NAME)) {
+				String newGroupName = (String) body.get(Column.GROUP_NAME);
 				
 				if (isGroupExist(groupId, newGroupName))
 					throw new GroupAlreadyExistsException(newGroupName);
 			}		
 			
-			Condition condition = new Condition(COL.GROUP_ID, Operator.equal, groupId);
+			Condition condition = new Condition(Column.GROUP_ID, Operator.equal, groupId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, userName);
-			putNotEmpty(body, paramMap, COL.GROUP_NAME);
-			putNotEmpty(body, paramMap, COL.DESCRIPTION);
-			putNotEmpty(body, paramMap, COL.BUCKETS);
+			paramMap.put(Column.UPDATED_BY, userName);
+			putNotEmpty(body, paramMap, Column.GROUP_NAME);
+			putNotEmpty(body, paramMap, Column.DESCRIPTION);
+			putNotEmpty(body, paramMap, Column.BUCKETS);
 					
 			Query query = new Query(TAB.GROUP, true)
 					.update()
@@ -183,22 +187,22 @@ public class DatabucketServiceIm implements DatabucketService {
 			throw new ClassAlreadyExistsException(className);
 		
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.CLASS_NAME, className);
-		namedParameters.addValue(COL.CREATED_BY, userName);
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
+		namedParameters.addValue(Column.CLASS_NAME, className);
+		namedParameters.addValue(Column.CREATED_BY, userName);
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.CLASS, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.CLASS_ID});	
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.CLASS_ID});
 		return keyHolder.getKey().intValue();
 	};
 	
 	public int deleteClass(Integer classId, String userName) throws ItemDoNotExistsException, UnknownColumnException {
-		Condition condition = new Condition(COL.CLASS_ID, Operator.equal, classId);
+		Condition condition = new Condition(Column.CLASS_ID, Operator.equal, classId);
 
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Set class as deleted
 		Query query = new Query(TAB.CLASS, true)
@@ -214,10 +218,10 @@ public class DatabucketServiceIm implements DatabucketService {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 
 		if (classId.isPresent()) {
-			conditions.add(new Condition(COL.CLASS_ID, Operator.equal, classId.get()));	
+			conditions.add(new Condition(Column.CLASS_ID, Operator.equal, classId.get()));
 		}
 		
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (urlConditions != null)
 			for (Condition condition : urlConditions)
@@ -236,8 +240,8 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
-		result.put(C.CLASSES, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.CLASSES, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
 		
 		return result;	
 	};
@@ -246,18 +250,18 @@ public class DatabucketServiceIm implements DatabucketService {
 	public void modifyClass(String userName, Integer classId, LinkedHashMap<String, Object> body)  throws ItemDoNotExistsException, ClassAlreadyExistsException, JsonProcessingException, IncorrectValueException, ExceededMaximumNumberOfCharactersException, DataAccessException, UnknownColumnException {
 		if (isClassExist(classId)) {
 
-			if (body.containsKey(COL.CLASS_NAME)) {
-				String newClassName = (String) body.get(COL.CLASS_NAME);
+			if (body.containsKey(Column.CLASS_NAME)) {
+				String newClassName = (String) body.get(Column.CLASS_NAME);
 				
 				if (isClassExist(classId, newClassName))
 					throw new ClassAlreadyExistsException(newClassName);
 			}		
 			
-			Condition condition = new Condition(COL.CLASS_ID, Operator.equal, classId);
+			Condition condition = new Condition(Column.CLASS_ID, Operator.equal, classId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, userName);
-			putNotEmpty(body, paramMap, COL.CLASS_NAME);
-			putNotEmpty(body, paramMap, COL.DESCRIPTION);
+			paramMap.put(Column.UPDATED_BY, userName);
+			putNotEmpty(body, paramMap, Column.CLASS_NAME);
+			putNotEmpty(body, paramMap, Column.DESCRIPTION);
 					
 			Query query = new Query(TAB.CLASS, true)
 					.update()
@@ -274,13 +278,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	private List<Map<String, Object>> getBuckets(Integer bucketId, Integer classId) throws UnknownColumnException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (bucketId != null && bucketId != -1)
-			conditions.add(new Condition(COL.BUCKET_ID, Operator.equal, bucketId));
+			conditions.add(new Condition(Column.BUCKET_ID, Operator.equal, bucketId));
 		
 		if (classId != null && classId != -1)
-			conditions.add(new Condition(COL.CLASS_ID, Operator.equal, classId));
+			conditions.add(new Condition(Column.CLASS_ID, Operator.equal, classId));
 		
 		Query queryData = new Query(TAB.BUCKET, true)
 				.select(getBucketColumns())
@@ -294,10 +298,10 @@ public class DatabucketServiceIm implements DatabucketService {
 
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (bucketName.isPresent())
-			conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName.get()));
+			conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName.get()));
 	
 		if (urlConditions != null)			
 			for (Condition condition : urlConditions)
@@ -316,20 +320,20 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
-		result.put(C.BUCKETS, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.BUCKETS, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
 
 		return result;
 	}
 	
 	public List<Map<String, Object>> getStatistic(String bucketName) throws ItemDoNotExistsException, UnexpectedException, UnknownColumnException {
-		String[] columns = {COL.TAG_ID,COL.TAG_NAME, COL.LOCKED, COL.COUNT};
-		String[] columns2 = {COL.TAG_ID, COL.LOCKED};
+		String[] columns = {Column.TAG_ID, Column.TAG_NAME, Column.LOCKED, Column.COUNT};
+		String[] columns2 = {Column.TAG_ID, Column.LOCKED};
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		Query query = new Query(bucketName, true)
 				.select(columns)
 				.from()
-				.leftOuterJoin(TAB.TAG, "t", COL.TAG_ID, "a", COL.TAG_ID)
+				.leftOuterJoin(TAB.TAG, "t", Column.TAG_ID, "a", Column.TAG_ID)
 				.groupBy(columns2);
 		
 		try {
@@ -347,20 +351,20 @@ public class DatabucketServiceIm implements DatabucketService {
 		if (!isBucketExist(bucketName)) {
 						
 			MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-			namedParameters.addValue(COL.BUCKET_NAME, bucketName);
-			namedParameters.addValue(COL.INDEX, index);
-			namedParameters.addValue(COL.ICON_NAME, icon);
-			namedParameters.addValue(COL.CREATED_BY, createdBy);
-			namedParameters.addValue(COL.HISTORY, history);
-			namedParameters.addValue(COL.CLASS_ID, classId);
+			namedParameters.addValue(Column.BUCKET_NAME, bucketName);
+			namedParameters.addValue(Column.INDEX, index);
+			namedParameters.addValue(Column.ICON_NAME, icon);
+			namedParameters.addValue(Column.CREATED_BY, createdBy);
+			namedParameters.addValue(Column.HISTORY, history);
+			namedParameters.addValue(Column.CLASS_ID, classId);
 			if (description != null)
-				namedParameters.addValue(COL.DESCRIPTION, description);
+				namedParameters.addValue(Column.DESCRIPTION, description);
 			
 			KeyHolder keyHolder = new GeneratedKeyHolder();
 			
 			Query query = new Query(TAB.BUCKET, true).insertIntoValues(namedParameters);		
 			
-			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.BUCKET_ID});	
+			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.BUCKET_ID});
 			int bucketId = keyHolder.getKey().intValue();
 			
 			// Create table for data
@@ -411,7 +415,7 @@ public class DatabucketServiceIm implements DatabucketService {
 			
 			return bucketId;
 		} else {
-			throw new BucketAlreadyExistsException(bucketName);
+			throw new AlreadyExistsException(AlreadyExistingItem.BUCKET, bucketName);
 		}		
 	}
 
@@ -420,11 +424,11 @@ public class DatabucketServiceIm implements DatabucketService {
 			throw new ItemDoNotExistsException("Bucket", bucketName);
 			
 		int bucketId = getBucketId(bucketName);		
-		Condition condition = new Condition(COL.BUCKET_ID, Operator.equal, bucketId);
+		Condition condition = new Condition(Column.BUCKET_ID, Operator.equal, bucketId);
 
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 				
 		// Set bucket as deleted
 		Query query = new Query(TAB.BUCKET, true)
@@ -432,12 +436,12 @@ public class DatabucketServiceIm implements DatabucketService {
 				.set(paramMap)
 				.where(condition, paramMap);	
 		
-		paramMap.put(COL.BUCKET_ID, bucketId);
+		paramMap.put(Column.BUCKET_ID, bucketId);
 		jdbcTemplate.update(query.toString(logger), paramMap);
 		
 		paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 		
 		// Delete tags from _tags
 		query = new Query(TAB.TAG, false)
@@ -445,12 +449,12 @@ public class DatabucketServiceIm implements DatabucketService {
 				.set(paramMap)
 				.where(condition, paramMap);
 		
-		paramMap.put(COL.BUCKET_ID, bucketId);
+		paramMap.put(Column.BUCKET_ID, bucketId);
 		jdbcTemplate.update(query.toString(logger), paramMap);
 		
 		paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Delete filters from _filters
 		query = new Query(TAB.FILTER, false)
@@ -458,12 +462,12 @@ public class DatabucketServiceIm implements DatabucketService {
 				.set(paramMap)
 				.where(condition, paramMap);
 		
-		paramMap.put(COL.BUCKET_ID, bucketId);
+		paramMap.put(Column.BUCKET_ID, bucketId);
 		jdbcTemplate.update(query.toString(logger), paramMap);
 		
 		paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Delete views from _views
 		query = new Query(TAB.VIEW, false)
@@ -471,7 +475,7 @@ public class DatabucketServiceIm implements DatabucketService {
 				.set(paramMap)
 				.where(condition, paramMap);
 		
-		paramMap.put(COL.BUCKET_ID, bucketId);
+		paramMap.put(Column.BUCKET_ID, bucketId);
 		jdbcTemplate.update(query.toString(logger), paramMap);
 
 		// Drop bucket history table
@@ -491,15 +495,15 @@ public class DatabucketServiceIm implements DatabucketService {
 	@SuppressWarnings("unchecked")
 	public void modifyBucket(String updatedBy, String bucketName, Map<String, Object> details) throws ItemDoNotExistsException, BucketAlreadyExistsException, JsonProcessingException, IncorrectValueException, ExceededMaximumNumberOfCharactersException, DataAccessException, UnknownColumnException {
 		Map<String, Object> result = getBuckets(Optional.of(bucketName), Optional.empty(), Optional.empty(), Optional.empty(), null);
-		List<Map<String, Object>> buckets = (List<Map<String, Object>>) result.get(C.BUCKETS);
+		List<Map<String, Object>> buckets = (List<Map<String, Object>>) result.get(Constants.BUCKETS);
 		
 		if (buckets.size() > 0) {			
 			Map<String, Object> bucket = buckets.get(0);
 			
-			if (details.containsKey(COL.BUCKET_NAME)) {
-				String newBucketName = (String) details.get(COL.BUCKET_NAME);
+			if (details.containsKey(Column.BUCKET_NAME)) {
+				String newBucketName = (String) details.get(Column.BUCKET_NAME);
 				if (newBucketName != null) {
-					String currentBucketName = (String) bucket.get(COL.BUCKET_NAME);
+					String currentBucketName = (String) bucket.get(Column.BUCKET_NAME);
 					if (!newBucketName.equals(currentBucketName)) {
 						if (!newBucketName.toLowerCase().equals(bucketName.toLowerCase())) {
 							if (!isBucketExist(newBucketName)) {
@@ -515,25 +519,25 @@ public class DatabucketServiceIm implements DatabucketService {
 				bucketName = newBucketName;
 			}	
 			
-			if (details.containsKey(COL.DESCRIPTION)) {
-				String description = (String) details.get(COL.DESCRIPTION);
+			if (details.containsKey(Column.DESCRIPTION)) {
+				String description = (String) details.get(Column.DESCRIPTION);
 				if (description.length() > 100)
-					throw new ExceededMaximumNumberOfCharactersException(COL.DESCRIPTION, description, 100);
+					throw new ExceededMaximumNumberOfCharactersException(Column.DESCRIPTION, description, 100);
 			}
 		
-			Condition conBucketId = new Condition(COL.BUCKET_ID, Operator.equal, bucket.get(COL.BUCKET_ID));
+			Condition conBucketId = new Condition(Column.BUCKET_ID, Operator.equal, bucket.get(Column.BUCKET_ID));
 			
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
-			putNotEmpty(details, paramMap, COL.BUCKET_NAME);
-			putNotEmpty(details, paramMap, COL.DESCRIPTION);
-			putNotEmpty(details, paramMap, COL.INDEX);
-			putNotEmpty(details, paramMap, COL.ICON_NAME);
-			putNotEmpty(details, paramMap, COL.HISTORY);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
+			putNotEmpty(details, paramMap, Column.BUCKET_NAME);
+			putNotEmpty(details, paramMap, Column.DESCRIPTION);
+			putNotEmpty(details, paramMap, Column.INDEX);
+			putNotEmpty(details, paramMap, Column.ICON_NAME);
+			putNotEmpty(details, paramMap, Column.HISTORY);
 			
-			if (details.containsKey(COL.CLASS_ID)) {
-				Integer classId = (Integer) details.get(COL.CLASS_ID);
-				paramMap.put(COL.CLASS_ID, classId);
+			if (details.containsKey(Column.CLASS_ID)) {
+				Integer classId = (Integer) details.get(Column.CLASS_ID);
+				paramMap.put(Column.CLASS_ID, classId);
 			}				
 			
 			Query query = new Query(TAB.BUCKET, true)
@@ -543,8 +547,8 @@ public class DatabucketServiceIm implements DatabucketService {
 			
 			this.jdbcTemplate.update(query.toString(logger), paramMap);
 			
-			if (details.get(COL.HISTORY) != null) {
-				boolean enableHistory = (boolean) details.get(COL.HISTORY);
+			if (details.get(Column.HISTORY) != null) {
+				boolean enableHistory = (boolean) details.get(Column.HISTORY);
 				if (enableHistory) {
 					createAfterInsertTrigger(bucketName);
 					createAfterUpdateTrigger(bucketName);
@@ -715,7 +719,7 @@ public class DatabucketServiceIm implements DatabucketService {
 		if (filterId.isPresent()) {
 			selectConditions = getFilterConditions(filterId.get());
 		} else if (tagId.isPresent()) {				
-			selectConditions.add(new Condition(COL.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagId.get()))));
+			selectConditions.add(new Condition(Column.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagId.get()))));
 		} else if (conditions.isPresent()) {
 			selectConditions = conditions.get();
 			
@@ -723,13 +727,13 @@ public class DatabucketServiceIm implements DatabucketService {
 		
 		boolean joinTags = false;		
 		if (sort.isPresent())
-			joinTags = sort.get().contains(COL.TAG_NAME);
+			joinTags = sort.get().contains(Column.TAG_NAME);
 		joinTags = joinTags || usedTagNameColumn(selectConditions);
 		
-		selectConditions.add(new Condition(COL.LOCKED, Operator.equal, false));
+		selectConditions.add(new Condition(Column.LOCKED, Operator.equal, false));
 		
 		Query selectQuery = new Query(bucketName, true)
-				.select(COL.BUNDLE_ID)
+				.select(Column.BUNDLE_ID)
 				.from()
 				.joinTags(joinTags)
 				.where(selectConditions, paramMap)
@@ -746,12 +750,12 @@ public class DatabucketServiceIm implements DatabucketService {
 					public List<Integer> doInTransaction(TransactionStatus paramTransactionStatus) {
 						List<Integer> listOfIds = jdbcTemplate.queryForList(selectQuery.toString(logger), paramMap, Integer.class);
 						if (listOfIds.size() > 0) {
-							Condition condition = new Condition(COL.BUNDLE_ID, Operator.in, listOfIds);
+							Condition condition = new Condition(Column.BUNDLE_ID, Operator.in, listOfIds);
 							
 							Map<String, Object> updateNamedParams = new HashMap<String, Object>();
-							updateNamedParams.put(COL.LOCKED_BY, userName);
-							updateNamedParams.put(COL.UPDATED_BY, userName);
-							updateNamedParams.put(COL.LOCKED, true);				
+							updateNamedParams.put(Column.LOCKED_BY, userName);
+							updateNamedParams.put(Column.UPDATED_BY, userName);
+							updateNamedParams.put(Column.LOCKED, true);
 							
 							Query updateQuery = null;
 							try {
@@ -794,7 +798,7 @@ public class DatabucketServiceIm implements DatabucketService {
 	public List<Map<String, Object>> getBundlesByQuery(String bucketName, Query query, Map<String, Object> namedParameters) throws ItemDoNotExistsException, UnknownColumnException, UnexpectedException {
 		try {
 			List<Map<String, Object>> result = jdbcTemplate.queryForList(query.toString(logger), namedParameters);
-			convertStringToMap(result, COL.PROPERTIES);
+			convertStringToMap(result, Column.PROPERTIES);
 			return result;
 		} catch (BadSqlGrammarException e) {
 			if (e.getMessage().matches(".*Table '.*' doesn't exist.*"))
@@ -810,10 +814,10 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private List<Map<String, Object>> getBundlesDefaultColumns() {				
 		List<Map<String, Object>> columns = new ArrayList<Map<String, Object>>();
-		final String[] staticColumns = {COL.BUNDLE_ID, COL.TAG_ID, COL.TAG_NAME, COL.LOCKED, COL.LOCKED_BY, COL.PROPERTIES, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY };
+		final String[] staticColumns = {Column.BUNDLE_ID, Column.TAG_ID, Column.TAG_NAME, Column.LOCKED, Column.LOCKED_BY, Column.PROPERTIES, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY };
 		for (String colName : staticColumns) {
 			Map<String, Object> colMap = new HashMap<String, Object>();
-			colMap.put(C.FIELD, colName);
+			colMap.put(Constants.FIELD, colName);
 			columns.add(colMap);
 		}
 		return columns;
@@ -831,13 +835,13 @@ public class DatabucketServiceIm implements DatabucketService {
 		
 		boolean joinTags = false;		
 		if (sort.isPresent())
-			joinTags = sort.get().contains(COL.TAG_NAME);
+			joinTags = sort.get().contains(Column.TAG_NAME);
 		
 		// ---------- ID ------------
 		if (bundleId.isPresent()) {	
 			columns = getBundlesDefaultColumns();	
 			joinTags = true; // currently default columns contain tag_name
-			conditions.add(new Condition(COL.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundleId.get()))));
+			conditions.add(new Condition(Column.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundleId.get()))));
 		
 		// ---------- FILTER ------------
 		} else if (filterId.isPresent()) {
@@ -849,7 +853,7 @@ public class DatabucketServiceIm implements DatabucketService {
 		} else if (tagId.isPresent()) {
 			columns = getBundlesDefaultColumns();
 			joinTags = true; // currently default columns contain tag_name
-			conditions.add(new Condition(COL.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagId.get()))));
+			conditions.add(new Condition(Column.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagId.get()))));
 			
 		// ---------- VIEW ------------
 		} else if (viewId.isPresent()) {
@@ -858,31 +862,31 @@ public class DatabucketServiceIm implements DatabucketService {
 			
 			// Prepare columns
 			boolean isBundleId = false;
-			columns = (List<Map<String, Object>>) view.get(COL.COLUMNS);			
+			columns = (List<Map<String, Object>>) view.get(Column.COLUMNS);
 			for (Map<String, Object> column : columns) {
-				String field = (String) column.get(C.FIELD);
+				String field = (String) column.get(Constants.FIELD);
 				
-				if (field.equals(COL.TAG_NAME))
+				if (field.equals(Column.TAG_NAME))
 					joinTags = true;
 				
-				if (field.equals(COL.BUNDLE_ID))
+				if (field.equals(Column.BUNDLE_ID))
 					isBundleId = true;
 			}
 			
 			if (!isBundleId) {
 				Map<String, Object> colBundleId = new HashMap<String, Object>();
-				colBundleId.put(C.FIELD, COL.BUNDLE_ID);
+				colBundleId.put(Constants.FIELD, Column.BUNDLE_ID);
 				columns.add(colBundleId);
 			}
 			
 			// Filter conditions		
-			if (view.containsKey(COL.FILTER_ID) && view.get(COL.FILTER_ID) != null) {
-				conditions = getFilterConditions((int) view.get(COL.FILTER_ID));
+			if (view.containsKey(Column.FILTER_ID) && view.get(Column.FILTER_ID) != null) {
+				conditions = getFilterConditions((int) view.get(Column.FILTER_ID));
 			} 
 			
 			// View conditions
-			if (view.containsKey(COL.CONDITIONS) && view.get(COL.CONDITIONS) != null) {
-				List<Condition> viewConditions = (List<Condition>) view.get(COL.CONDITIONS);
+			if (view.containsKey(Column.CONDITIONS) && view.get(Column.CONDITIONS) != null) {
+				List<Condition> viewConditions = (List<Condition>) view.get(Column.CONDITIONS);
 				for (Condition cond : viewConditions)
 					conditions.add(cond);
 			}
@@ -898,7 +902,7 @@ public class DatabucketServiceIm implements DatabucketService {
 					if (field.equals("tag_name"))
 						joinTags = true;
 					
-					if (field.equals(COL.BUNDLE_ID))
+					if (field.equals(Column.BUNDLE_ID))
 						isBundleId = true;
 				}			
 				
@@ -906,7 +910,7 @@ public class DatabucketServiceIm implements DatabucketService {
 				
 				if (!isBundleId) {
 					Map<String, Object> colBundleId = new HashMap<String, Object>();
-					colBundleId.put(C.FIELD, COL.BUNDLE_ID);
+					colBundleId.put(Constants.FIELD, Column.BUNDLE_ID);
 					columns.add(colBundleId);
 				}				
 			} else {
@@ -921,7 +925,7 @@ public class DatabucketServiceIm implements DatabucketService {
 		joinTags = joinTags || usedTagNameColumn(conditions);
 		
 		queryCount = new Query(bucketName, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.joinTags(joinTags)
 				.where(conditions, paramMap);
@@ -941,30 +945,30 @@ public class DatabucketServiceIm implements DatabucketService {
 		convertPropertiesColumns(bundles);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, count);
-		result.put(C.BUNDLES, bundles);	
+		result.put(Constants.TOTAL, count);
+		result.put(Constants.BUNDLES, bundles);
 		return result;
 	}	
 
 	public int createBundle(String createdBy, String bucketName, Map<String, Object> details) throws JsonProcessingException, ItemDoNotExistsException, UnexpectedException, ItemDoNotExistsException, UnknownColumnException {
 		try {
 			MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-			if (details.containsKey(COL.TAG_ID))
-				namedParameters.addValue(COL.TAG_ID, details.get(COL.TAG_ID));
-			else if (details.containsKey(COL.TAG_NAME)) {
-				String tagName = (String) details.get(COL.TAG_NAME);
-				namedParameters.addValue(COL.TAG_ID, getTagId(tagName));
+			if (details.containsKey(Column.TAG_ID))
+				namedParameters.addValue(Column.TAG_ID, details.get(Column.TAG_ID));
+			else if (details.containsKey(Column.TAG_NAME)) {
+				String tagName = (String) details.get(Column.TAG_NAME);
+				namedParameters.addValue(Column.TAG_ID, getTagId(tagName));
 			}
 			
-			namedParameters.addValue(COL.CREATED_BY, createdBy);
-			boolean added = putNotEmpty(namedParameters, COL.LOCKED, details.get(COL.LOCKED));
-			if (added && (boolean) details.get(COL.LOCKED) == true)
-				namedParameters.addValue(COL.LOCKED_BY, createdBy);
-			putNotEmpty(namedParameters, COL.PROPERTIES, details.get(COL.PROPERTIES));
+			namedParameters.addValue(Column.CREATED_BY, createdBy);
+			boolean added = putNotEmpty(namedParameters, Column.LOCKED, details.get(Column.LOCKED));
+			if (added && (boolean) details.get(Column.LOCKED) == true)
+				namedParameters.addValue(Column.LOCKED_BY, createdBy);
+			putNotEmpty(namedParameters, Column.PROPERTIES, details.get(Column.PROPERTIES));
 			
 			KeyHolder keyHolder = new GeneratedKeyHolder();
 			Query query = new Query(bucketName, true).insertIntoValues(namedParameters);		
-			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.BUNDLE_ID});	
+			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.BUNDLE_ID});
 			return keyHolder.getKey().intValue();
 		} catch (BadSqlGrammarException e) {
 			if (e.getMessage().matches(".*Table '.*' doesn't exist.*"))
@@ -979,37 +983,37 @@ public class DatabucketServiceIm implements DatabucketService {
 
 		List<Condition> conditions = new ArrayList<Condition>();
 		if (bundlesIds.isPresent()) {
-			conditions.add(new Condition(COL.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundlesIds.get()))));
+			conditions.add(new Condition(Column.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundlesIds.get()))));
 		} else if (filterId.isPresent()) {
 			conditions = getFilterConditions(filterId.get());
 		} else if (tagsIds.isPresent()) {
-			conditions.add(new Condition(COL.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagsIds.get()))));
-		} else if (details.get(COL.CONDITIONS) != null) {
-			List<Map<String, Object>> bodyConditions = (List<Map<String, Object>>) details.get(COL.CONDITIONS);
+			conditions.add(new Condition(Column.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagsIds.get()))));
+		} else if (details.get(Column.CONDITIONS) != null) {
+			List<Map<String, Object>> bodyConditions = (List<Map<String, Object>>) details.get(Column.CONDITIONS);
 			for (Map<String, Object> bodyCondition: bodyConditions)
 				conditions.add(new Condition(bodyCondition));
 		}		
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.UPDATED_BY, updatedBy);
+		paramMap.put(Column.UPDATED_BY, updatedBy);
 
-		if (details.containsKey(COL.TAG_ID))
-			putNotEmpty(details, paramMap, COL.TAG_ID);
-		else if (details.containsKey(COL.TAG_NAME)) {
-			int tagId = getTagId((String) details.get(COL.TAG_NAME));
-			paramMap.put(COL.TAG_ID, tagId);
+		if (details.containsKey(Column.TAG_ID))
+			putNotEmpty(details, paramMap, Column.TAG_ID);
+		else if (details.containsKey(Column.TAG_NAME)) {
+			int tagId = getTagId((String) details.get(Column.TAG_NAME));
+			paramMap.put(Column.TAG_ID, tagId);
 		}
 
-		if (details.get(COL.LOCKED) != null) {
-			boolean locked = (boolean) details.get(COL.LOCKED);
-			paramMap.put(COL.LOCKED, locked);
+		if (details.get(Column.LOCKED) != null) {
+			boolean locked = (boolean) details.get(Column.LOCKED);
+			paramMap.put(Column.LOCKED, locked);
 			if (locked)
-				paramMap.put(COL.LOCKED_BY, updatedBy);
+				paramMap.put(Column.LOCKED_BY, updatedBy);
 			else
-				paramMap.put(COL.LOCKED_BY, null);
+				paramMap.put(Column.LOCKED_BY, null);
 		}
 
-		boolean properties = putNotEmpty(details, paramMap, COL.PROPERTIES);
+		boolean properties = putNotEmpty(details, paramMap, Column.PROPERTIES);
 		boolean joinTags = usedTagNameColumn(conditions);
 
 		Query query = new Query(bucketName, true)
@@ -1035,11 +1039,11 @@ public class DatabucketServiceIm implements DatabucketService {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		if (bundlesIds.isPresent()) {
-			conditions.add(new Condition(COL.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundlesIds.get()))));
+			conditions.add(new Condition(Column.BUNDLE_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(bundlesIds.get()))));
 		} else if (filterId.isPresent()) {
 			conditions = getFilterConditions(filterId.get());
 		} else if (tagsIds.isPresent()) {
-			conditions.add(new Condition(COL.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagsIds.get()))));
+			conditions.add(new Condition(Column.TAG_ID, Operator.in, new ArrayList<Integer>(Arrays.asList(tagsIds.get()))));
 		}
 		
 		Query query = new Query(bucketName, false)
@@ -1082,14 +1086,14 @@ public class DatabucketServiceIm implements DatabucketService {
 	public List<Map<String, Object>> getBundleHistory(String bucketName, Integer bundleId) throws ItemDoNotExistsException, UnexpectedException, UnknownColumnException{
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
-		String[] columns = {COL.ID, COL.TAG_ID, COL.LOCKED, COL.PROPERTIES + " is not null as '" + COL.PROPERTIES + "'", COL.UPDATED_AT, COL.UPDATED_BY};
-		Condition condition = new Condition(COL.BUNDLE_ID, Operator.equal, bundleId);
+		String[] columns = {Column.ID, Column.TAG_ID, Column.LOCKED, Column.PROPERTIES + " is not null as '" + Column.PROPERTIES + "'", Column.UPDATED_AT, Column.UPDATED_BY};
+		Condition condition = new Condition(Column.BUNDLE_ID, Operator.equal, bundleId);
 		
 		Query query = new Query(bucketName + "_history", true)
 				.select(columns)
 				.from()
 				.where(condition, paramMap)
-				.orderBy("a." + COL.UPDATED_AT, true);
+				.orderBy("a." + Column.UPDATED_AT, true);
 		try {
 			List<Map<String, Object>> result = jdbcTemplate.queryForList(query.toString(logger), paramMap);
 			
@@ -1098,21 +1102,21 @@ public class DatabucketServiceIm implements DatabucketService {
 			for (Map<String, Object> map : result) {
 				
 				// remove null properties items, change value into boolean
-				if ((Long) map.get(COL.PROPERTIES) == 0L) {
-					map.remove(COL.PROPERTIES);
+				if ((Long) map.get(Column.PROPERTIES) == 0L) {
+					map.remove(Column.PROPERTIES);
 				} else {
-					map.replace(COL.PROPERTIES, true); // true means -> properties has been changed
+					map.replace(Column.PROPERTIES, true); // true means -> properties has been changed
 				}
 				
 				// remove null tag_id items if previous tag_id is the same
-				if (map.get(COL.TAG_ID) == null && previousTagId == null) {
-					map.remove(COL.TAG_ID);
+				if (map.get(Column.TAG_ID) == null && previousTagId == null) {
+					map.remove(Column.TAG_ID);
 				}
-				previousTagId = (Integer) map.get(COL.TAG_ID);
+				previousTagId = (Integer) map.get(Column.TAG_ID);
 				
 				// remove null locked items
-				if (map.get(COL.LOCKED) == null) {
-					map.remove(COL.LOCKED);
+				if (map.get(Column.LOCKED) == null) {
+					map.remove(Column.LOCKED);
 				}
 			}
 			
@@ -1130,19 +1134,19 @@ public class DatabucketServiceIm implements DatabucketService {
 		List<Condition> conditions = new ArrayList<Condition>();
 		Map<String, Object> namedParameters = new HashMap<String, Object>();
 		
-		String[] columns = {COL.ID, COL.PROPERTIES};
+		String[] columns = {Column.ID, Column.PROPERTIES};
 		
-		conditions.add(new Condition(COL.BUNDLE_ID, Operator.equal, bundleId));
-		conditions.add(new Condition(COL.ID, Operator.in, new ArrayList<Integer>(Arrays.asList(ids))));
+		conditions.add(new Condition(Column.BUNDLE_ID, Operator.equal, bundleId));
+		conditions.add(new Condition(Column.ID, Operator.in, new ArrayList<Integer>(Arrays.asList(ids))));
 		
 		Query query = new Query(bucketName + "_history", true)
 				.select(columns)
 				.from()
 				.where(conditions, namedParameters)
-				.orderBy(COL.ID, true);
+				.orderBy(Column.ID, true);
 		try {
 			List<Map<String, Object>> result = jdbcTemplate.queryForList(query.toString(logger), namedParameters);
-			convertStringToMap(result, COL.PROPERTIES);
+			convertStringToMap(result, Column.PROPERTIES);
 			return result;
 		} catch (Exception e) {
 			if (e.getMessage().matches(".*Table '.*' doesn't exist.*")) 
@@ -1160,15 +1164,15 @@ public class DatabucketServiceIm implements DatabucketService {
 			}		
 			
 			MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-			namedParameters.addValue(COL.TAG_NAME, tagName);
-			putNotEmpty(namedParameters, COL.BUCKET_ID, bucketId);
-			namedParameters.addValue(COL.CREATED_BY, createdBy);
-			putNotEmpty(namedParameters, COL.DESCRIPTION, description);
-			putNotEmpty(namedParameters, COL.CLASS_ID, classId);
+			namedParameters.addValue(Column.TAG_NAME, tagName);
+			putNotEmpty(namedParameters, Column.BUCKET_ID, bucketId);
+			namedParameters.addValue(Column.CREATED_BY, createdBy);
+			putNotEmpty(namedParameters, Column.DESCRIPTION, description);
+			putNotEmpty(namedParameters, Column.CLASS_ID, classId);
 			
 			KeyHolder keyHolder = new GeneratedKeyHolder();
 			Query query = new Query(TAB.TAG, true).insertIntoValues(namedParameters);		
-			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.TAG_ID});	
+			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.TAG_ID});
 			return keyHolder.getKey().intValue();
 		} else {
 			throw new TagAlreadyExistsException(tagName);
@@ -1180,12 +1184,12 @@ public class DatabucketServiceIm implements DatabucketService {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 
 		if (tagId.isPresent()) {
-			conditions.add(new Condition(COL.TAG_ID, Operator.equal, tagId.get()));	
+			conditions.add(new Condition(Column.TAG_ID, Operator.equal, tagId.get()));
 		} else if (bucketName.isPresent()) {
-			conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName.get()));
+			conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName.get()));
 		}
 		
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (urlConditions != null)
 			for (Condition condition : urlConditions)
@@ -1204,15 +1208,15 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
-		result.put(C.TAGS, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TAGS, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
 		
 		return result;
 	}
 	
 	private Map<String, Object> getEvent(int eventId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.EVENT_ID, Operator.equal, eventId));
+		conditions.add(new Condition(Column.EVENT_ID, Operator.equal, eventId));
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.EVENT, true)
@@ -1232,12 +1236,12 @@ public class DatabucketServiceIm implements DatabucketService {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 
 		if (eventId.isPresent()) {
-			conditions.add(new Condition(COL.EVENT_ID, Operator.equal, eventId.get()));	
+			conditions.add(new Condition(Column.EVENT_ID, Operator.equal, eventId.get()));
 		} else if (bucketName.isPresent()) {
-			conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName.get()));
+			conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName.get()));
 		}
 		
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (urlConditions != null)
 			for (Condition condition : urlConditions)
@@ -1256,7 +1260,7 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> eventList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
 		
 		// Verify active events. All active events should have its representation in database events.
@@ -1264,10 +1268,10 @@ public class DatabucketServiceIm implements DatabucketService {
 		List<Integer> removedEventsIds = new ArrayList<Integer>();
 		
 		for (Map<String, Object> eventItem : eventList) {
-			if ((boolean) eventItem.get(COL.ACTIVE) == true) {
-				String eventName = (String) eventItem.get(COL.EVENT_NAME);
+			if ((boolean) eventItem.get(Column.ACTIVE) == true) {
+				String eventName = (String) eventItem.get(Column.EVENT_NAME);
 				if (!databaseEvents.contains(eventName))
-					removedEventsIds.add((Integer) eventItem.get(COL.EVENT_ID));
+					removedEventsIds.add((Integer) eventItem.get(Column.EVENT_ID));
 			}
 		}
 		
@@ -1276,9 +1280,9 @@ public class DatabucketServiceIm implements DatabucketService {
 			eventList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
 		}
 		
-		convertStringToList(eventList, COL.TASKS);
-		convertStringToMap(eventList, COL.SCHEDULE);
-		result.put(C.EVENTS, eventList);		
+		convertStringToList(eventList, Column.TASKS);
+		convertStringToMap(eventList, Column.SCHEDULE);
+		result.put(Constants.EVENTS, eventList);
 		
 		return result;
 	}
@@ -1304,17 +1308,17 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 		
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
-		result.put(C.EVENTS_LOG, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.EVENTS_LOG, jdbcTemplate.queryForList(queryData.toString(logger), paramMap));
 		
 		return result;
 	}
 	
 	private void deactivateEvents(List<Integer> eventsIds) throws UnknownColumnException {
-		Condition condition = new Condition(COL.EVENT_ID, Operator.in, eventsIds);			
+		Condition condition = new Condition(Column.EVENT_ID, Operator.in, eventsIds);
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.UPDATED_BY, "server");
-		paramMap.put(COL.ACTIVE, false);
+		paramMap.put(Column.UPDATED_BY, "server");
+		paramMap.put(Column.ACTIVE, false);
 			
 		Query query = new Query(TAB.EVENT, true)
 				.update()
@@ -1330,13 +1334,13 @@ public class DatabucketServiceIm implements DatabucketService {
 			if (tagName != null && isTagExist(tagId, tagName))
 				throw new TagAlreadyExistsException(tagName);	
 			
-			Condition condition = new Condition(COL.TAG_ID, Operator.equal, tagId);
+			Condition condition = new Condition(Column.TAG_ID, Operator.equal, tagId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
-			putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-			putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-			putNotEmpty(paramMap, COL.TAG_NAME, tagName);
-			putNotEmpty(paramMap, COL.DESCRIPTION, description);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
+			putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+			putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+			putNotEmpty(paramMap, Column.TAG_NAME, tagName);
+			putNotEmpty(paramMap, Column.DESCRIPTION, description);
 					
 			Query query = new Query(TAB.TAG, true)
 					.update()
@@ -1350,11 +1354,11 @@ public class DatabucketServiceIm implements DatabucketService {
 	}
 
 	public int deleteTag(String userName, int tagId) throws UnknownColumnException {
-		Condition condition = new Condition(COL.TAG_ID, Operator.equal, tagId);
+		Condition condition = new Condition(Column.TAG_ID, Operator.equal, tagId);
 
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Set tag as deleted
 		Query query = new Query(TAB.TAG, true)
@@ -1373,16 +1377,16 @@ public class DatabucketServiceIm implements DatabucketService {
 		}
 		
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.COLUMNS_NAME, columnsName);
-		namedParameters.addValue(COL.CREATED_BY, createdBy);
-		namedParameters.addValue(COL.BUCKET_ID, bucketId);
-		namedParameters.addValue(COL.CLASS_ID, classId);
-		namedParameters.addValue(COL.COLUMNS, new ObjectMapper().writeValueAsString(columns));
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
+		namedParameters.addValue(Column.COLUMNS_NAME, columnsName);
+		namedParameters.addValue(Column.CREATED_BY, createdBy);
+		namedParameters.addValue(Column.BUCKET_ID, bucketId);
+		namedParameters.addValue(Column.CLASS_ID, classId);
+		namedParameters.addValue(Column.COLUMNS, new ObjectMapper().writeValueAsString(columns));
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.COLUMNS, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.COLUMNS_ID});	
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.COLUMNS_ID});
 		return keyHolder.getKey().intValue();
 	}
 
@@ -1394,31 +1398,31 @@ public class DatabucketServiceIm implements DatabucketService {
 		}
 		
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.FILTER_NAME, filterName);
-		namedParameters.addValue(COL.CREATED_BY, createdBy);
-		namedParameters.addValue(COL.CONDITIONS, new ObjectMapper().writeValueAsString(conditions));
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
-		putNotEmpty(namedParameters, COL.CLASS_ID, classId);
-		putNotEmpty(namedParameters, COL.BUCKET_ID, bucketId);
+		namedParameters.addValue(Column.FILTER_NAME, filterName);
+		namedParameters.addValue(Column.CREATED_BY, createdBy);
+		namedParameters.addValue(Column.CONDITIONS, new ObjectMapper().writeValueAsString(conditions));
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
+		putNotEmpty(namedParameters, Column.CLASS_ID, classId);
+		putNotEmpty(namedParameters, Column.BUCKET_ID, bucketId);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.FILTER, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.FILTER_ID});	
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.FILTER_ID});
 		return keyHolder.getKey().intValue();
 	}
 	
 	public int createTask(String taskName, Integer bucketId, Integer classId, String createdBy, String description, Map<String, Object> configuration) throws ItemDoNotExistsException, JsonProcessingException, UnknownColumnException {
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.TASK_NAME, taskName);
-		namedParameters.addValue(COL.CREATED_BY, createdBy);
-		namedParameters.addValue(COL.CONFIGURATION, new ObjectMapper().writeValueAsString(configuration));
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
-		putNotEmpty(namedParameters, COL.CLASS_ID, classId);
-		putNotEmpty(namedParameters, COL.BUCKET_ID, bucketId);
+		namedParameters.addValue(Column.TASK_NAME, taskName);
+		namedParameters.addValue(Column.CREATED_BY, createdBy);
+		namedParameters.addValue(Column.CONFIGURATION, new ObjectMapper().writeValueAsString(configuration));
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
+		putNotEmpty(namedParameters, Column.CLASS_ID, classId);
+		putNotEmpty(namedParameters, Column.BUCKET_ID, bucketId);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.TASK, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.TASK_ID});	
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.TASK_ID});
 		return keyHolder.getKey().intValue();
 	}
 	
@@ -1433,26 +1437,26 @@ public class DatabucketServiceIm implements DatabucketService {
 			throw new ItemAlreadyExistsException("Event " + eventName + " already exist in the database!");
 
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.EVENT_NAME, eventName);
-		namedParameters.addValue(COL.CREATED_BY, userName);
+		namedParameters.addValue(Column.EVENT_NAME, eventName);
+		namedParameters.addValue(Column.CREATED_BY, userName);
 		
-		namedParameters.addValue(COL.SCHEDULE, new ObjectMapper().writeValueAsString(schedule));
-		namedParameters.addValue(COL.TASKS, new ObjectMapper().writeValueAsString(tasks));
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
-		putNotEmpty(namedParameters, COL.ACTIVE, active);
-		putNotEmpty(namedParameters, COL.CLASS_ID, classId);
-		putNotEmpty(namedParameters, COL.BUCKET_ID, bucketId);
+		namedParameters.addValue(Column.SCHEDULE, new ObjectMapper().writeValueAsString(schedule));
+		namedParameters.addValue(Column.TASKS, new ObjectMapper().writeValueAsString(tasks));
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
+		putNotEmpty(namedParameters, Column.ACTIVE, active);
+		putNotEmpty(namedParameters, Column.CLASS_ID, classId);
+		putNotEmpty(namedParameters, Column.BUCKET_ID, bucketId);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.EVENT, true).insertIntoValues(namedParameters);		
-		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.EVENT_ID});	
+		jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.EVENT_ID});
 						
 		int eventId = keyHolder.getKey().intValue();
 		
 		if (active != null && active) {
 			List<Map<String, Object>> buckets = getBuckets(bucketId, classId);
 			Map<String, Object> event = getEvent(eventId);
-			String eName = (String) event.get(COL.EVENT_NAME);
+			String eName = (String) event.get(Column.EVENT_NAME);
 			createDatabaseEvent(eventId, eName, buckets, schedule, tasks);
 		}
 		
@@ -1461,11 +1465,11 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	public int deleteColumns(String userName, int columnsId) throws ItemDoNotExistsException, UnknownColumnException {
 		if (isColumnsExist(columnsId)) {
-			Condition condition = new Condition(COL.COLUMNS_ID, Operator.equal, columnsId);
+			Condition condition = new Condition(Column.COLUMNS_ID, Operator.equal, columnsId);
 	
 			Map<String, Object> namedParameters = new HashMap<String, Object>();
-			namedParameters.put(COL.DELETED, true);
-			namedParameters.put(COL.UPDATED_BY, userName);
+			namedParameters.put(Column.DELETED, true);
+			namedParameters.put(Column.UPDATED_BY, userName);
 	
 			// Set columns as deleted
 			Query query = new Query(TAB.COLUMNS, true)
@@ -1480,11 +1484,11 @@ public class DatabucketServiceIm implements DatabucketService {
 
 	public int deleteFilter(String userName, int filterId) throws ItemDoNotExistsException, UnknownColumnException {
 		if (isFilterExist(filterId)) {
-			Condition condition = new Condition(COL.FILTER_ID, Operator.equal, filterId);
+			Condition condition = new Condition(Column.FILTER_ID, Operator.equal, filterId);
 	
 			Map<String, Object> namedParameters = new HashMap<String, Object>();
-			namedParameters.put(COL.DELETED, true);
-			namedParameters.put(COL.UPDATED_BY, userName);
+			namedParameters.put(Column.DELETED, true);
+			namedParameters.put(Column.UPDATED_BY, userName);
 	
 			// Set filter as deleted
 			Query query = new Query(TAB.FILTER, true)
@@ -1499,11 +1503,11 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	public int deleteTask(String userName, int taskId) throws ItemDoNotExistsException, UnknownColumnException {
 		if (isTaskExist(taskId)) {
-			Condition condition = new Condition(COL.TASK_ID, Operator.equal, taskId);
+			Condition condition = new Condition(Column.TASK_ID, Operator.equal, taskId);
 	
 			Map<String, Object> namedParameters = new HashMap<String, Object>();
-			namedParameters.put(COL.DELETED, true);
-			namedParameters.put(COL.UPDATED_BY, userName);
+			namedParameters.put(Column.DELETED, true);
+			namedParameters.put(Column.UPDATED_BY, userName);
 	
 			// Set task as deleted
 			Query query = new Query(TAB.TASK, true)
@@ -1517,17 +1521,17 @@ public class DatabucketServiceIm implements DatabucketService {
 	}
 	
 	public int deleteEvent(String userName, Integer eventId) throws DataAccessException, UnknownColumnException, ItemDoNotExistsException {
-		if (isItemExist(TAB.EVENT, COL.EVENT_ID, eventId)) {
+		if (isItemExist(TAB.EVENT, Column.EVENT_ID, eventId)) {
 			
 			Map<String, Object> event = getEvent(eventId);
-			String eName = (String) event.get(COL.EVENT_NAME);
+			String eName = (String) event.get(Column.EVENT_NAME);
 			removeDatabaseEvent(eName);
 			
-			Condition condition = new Condition(COL.EVENT_ID, Operator.equal, eventId);
+			Condition condition = new Condition(Column.EVENT_ID, Operator.equal, eventId);
 	
 			Map<String, Object> namedParameters = new HashMap<String, Object>();
-			namedParameters.put(COL.DELETED, true);
-			namedParameters.put(COL.UPDATED_BY, userName);
+			namedParameters.put(Column.DELETED, true);
+			namedParameters.put(Column.UPDATED_BY, userName);
 	
 			// Set event as deleted
 			Query query = new Query(TAB.EVENT, true)
@@ -1551,13 +1555,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	public Map<String, Object> getColumns(Optional<String> bucketName, Optional<Integer> columnsId, Optional<Integer> page, Optional<Integer> limit, Optional<String> sort, List<Condition> urlConditions) throws ItemDoNotExistsException, UnexpectedException, UnknownColumnException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (columnsId.isPresent()) {
-			conditions.add(new Condition(COL.COLUMNS_ID, Operator.equal, columnsId.get()));
+			conditions.add(new Condition(Column.COLUMNS_ID, Operator.equal, columnsId.get()));
 		} else if (bucketName.isPresent()) {
 			int bucketId = getBucketId(bucketName.get());
-			conditions.add(new Condition(COL.BUCKET_ID, Operator.equal, bucketId));
+			conditions.add(new Condition(Column.BUCKET_ID, Operator.equal, bucketId));
 		} 
 		
 		if (urlConditions != null)			
@@ -1577,10 +1581,10 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> columnsList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		convertStringToList(columnsList, COL.COLUMNS);
-		result.put(C.COLUMNS, columnsList);
+		convertStringToList(columnsList, Column.COLUMNS);
+		result.put(Constants.COLUMNS, columnsList);
 
 		return result;
 	}
@@ -1588,13 +1592,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	public Map<String, Object> getFilters(Optional<String> bucketName, Optional<Integer> filterId, Optional<Integer> page, Optional<Integer> limit, Optional<String> sort, List<Condition> urlConditions) throws ItemDoNotExistsException, UnexpectedException, UnknownColumnException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (filterId.isPresent()) {
-			conditions.add(new Condition(COL.FILTER_ID, Operator.equal, filterId.get()));
+			conditions.add(new Condition(Column.FILTER_ID, Operator.equal, filterId.get()));
 		} else if (bucketName.isPresent()) {
 			int bucketId = getBucketId(bucketName.get());
-			conditions.add(new Condition(COL.BUCKET_ID, Operator.equal, bucketId));
+			conditions.add(new Condition(Column.BUCKET_ID, Operator.equal, bucketId));
 		} 
 		
 		if (urlConditions != null)			
@@ -1614,10 +1618,10 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> filterList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		convertStringToList(filterList, COL.CONDITIONS);
-		result.put(C.FILTERS, filterList);
+		convertStringToList(filterList, Column.CONDITIONS);
+		result.put(Constants.FILTERS, filterList);
 
 		return result;
 	}
@@ -1625,8 +1629,8 @@ public class DatabucketServiceIm implements DatabucketService {
 	public Map<String, Object> getTask(int taskId) throws UnknownColumnException, UnexpectedException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
-		conditions.add(new Condition(COL.TASK_ID, Operator.equal, taskId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.TASK_ID, Operator.equal, taskId));
 		
 		Query queryData = new Query(TAB.TASK, true)
 				.select(getTaskColumns())
@@ -1634,20 +1638,20 @@ public class DatabucketServiceIm implements DatabucketService {
 				.where(conditions, paramMap);
 
 		List<Map<String, Object>> taskList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		convertStringToMap(taskList, COL.CONFIGURATION);
+		convertStringToMap(taskList, Column.CONFIGURATION);
 		return taskList.get(0);
 	}
 	
 	public Map<String, Object> getTasks(Optional<String> bucketName, Optional<Integer> taskId, Optional<Integer> page, Optional<Integer> limit, Optional<String> sort, List<Condition> urlConditions) throws ItemDoNotExistsException, UnknownColumnException, UnexpectedException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (taskId.isPresent()) {
-			conditions.add(new Condition(COL.TASK_ID, Operator.equal, taskId.get()));
+			conditions.add(new Condition(Column.TASK_ID, Operator.equal, taskId.get()));
 		} else if (bucketName.isPresent()) {
 			int bucketId = getBucketId(bucketName.get());
-			conditions.add(new Condition(COL.BUCKET_ID, Operator.equal, bucketId));
+			conditions.add(new Condition(Column.BUCKET_ID, Operator.equal, bucketId));
 		} 
 		
 		if (urlConditions != null)			
@@ -1667,10 +1671,10 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> taskList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		convertStringToMap(taskList, COL.CONFIGURATION);
-		result.put(C.TASKS, taskList);
+		convertStringToMap(taskList, Column.CONFIGURATION);
+		result.put(Constants.TASKS, taskList);
 
 		return result;
 	}
@@ -1683,15 +1687,15 @@ public class DatabucketServiceIm implements DatabucketService {
 					throw new ColumnsAlreadyExistsException(columnsName);
 			}
 			
-			Condition condition = new Condition(COL.COLUMNS_ID, Operator.equal, columnsId);			
+			Condition condition = new Condition(Column.COLUMNS_ID, Operator.equal, columnsId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
 			try {
-				putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-				putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-				putNotEmpty(paramMap, COL.COLUMNS_NAME, columnsName);
-				putNotEmpty(paramMap, COL.DESCRIPTION, description);
-				putNotEmpty(paramMap, COL.COLUMNS, columns);	
+				putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+				putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+				putNotEmpty(paramMap, Column.COLUMNS_NAME, columnsName);
+				putNotEmpty(paramMap, Column.DESCRIPTION, description);
+				putNotEmpty(paramMap, Column.COLUMNS, columns);
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
 			}
@@ -1716,15 +1720,15 @@ public class DatabucketServiceIm implements DatabucketService {
 					throw new FilterAlreadyExistsException(filterName);
 			}
 			
-			Condition condition = new Condition(COL.FILTER_ID, Operator.equal, filterId);			
+			Condition condition = new Condition(Column.FILTER_ID, Operator.equal, filterId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
 			try {
-				putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-				putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-				putNotEmpty(paramMap, COL.FILTER_NAME, filterName);
-				putNotEmpty(paramMap, COL.DESCRIPTION, description);
-				putNotEmpty(paramMap, COL.CONDITIONS, conditions);				
+				putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+				putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+				putNotEmpty(paramMap, Column.FILTER_NAME, filterName);
+				putNotEmpty(paramMap, Column.DESCRIPTION, description);
+				putNotEmpty(paramMap, Column.CONDITIONS, conditions);
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
 			}
@@ -1741,15 +1745,15 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	public void modifyTask(String updatedBy, Integer taskId, String taskName, Integer bucketId, Integer classId, String description, LinkedHashMap<String, Object> configuration) throws ItemDoNotExistsException,	ExceededMaximumNumberOfCharactersException, UnexpectedException, UnknownColumnException {
 		if (isTaskExist(taskId)) {				
-			Condition condition = new Condition(COL.TASK_ID, Operator.equal, taskId);			
+			Condition condition = new Condition(Column.TASK_ID, Operator.equal, taskId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
 			try {
-				putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-				putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-				putNotEmpty(paramMap, COL.TASK_NAME, taskName);
-				putNotEmpty(paramMap, COL.DESCRIPTION, description);
-				putNotEmpty(paramMap, COL.CONFIGURATION, configuration);	
+				putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+				putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+				putNotEmpty(paramMap, Column.TASK_NAME, taskName);
+				putNotEmpty(paramMap, Column.DESCRIPTION, description);
+				putNotEmpty(paramMap, Column.CONFIGURATION, configuration);
 				
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
@@ -1785,20 +1789,20 @@ public class DatabucketServiceIm implements DatabucketService {
 			}
 			
 			// Remove old event
-			String eName = (String) event.get(COL.EVENT_NAME);
+			String eName = (String) event.get(Column.EVENT_NAME);
 			removeDatabaseEvent(eName);		
 			
-			Condition condition = new Condition(COL.EVENT_ID, Operator.equal, eventId);			
+			Condition condition = new Condition(Column.EVENT_ID, Operator.equal, eventId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, userName);
+			paramMap.put(Column.UPDATED_BY, userName);
 			try {
-				putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-				putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-				putNotEmpty(paramMap, COL.EVENT_NAME, eventName);
-				putNotEmpty(paramMap, COL.DESCRIPTION, description);
-				putNotEmpty(paramMap, COL.SCHEDULE, schedule);	
-				putNotEmpty(paramMap, COL.TASKS, tasks);
-				putNotEmpty(paramMap, COL.ACTIVE, active);
+				putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+				putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+				putNotEmpty(paramMap, Column.EVENT_NAME, eventName);
+				putNotEmpty(paramMap, Column.DESCRIPTION, description);
+				putNotEmpty(paramMap, Column.SCHEDULE, schedule);
+				putNotEmpty(paramMap, Column.TASKS, tasks);
+				putNotEmpty(paramMap, Column.ACTIVE, active);
 				
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
@@ -1825,19 +1829,19 @@ public class DatabucketServiceIm implements DatabucketService {
 	public int createView(String userName, String viewName, String description, Integer bucketId, Integer classId, Integer columnsId, Integer filterId) throws UnexpectedException, ViewAlreadyExistsException, UnknownColumnException, JsonProcessingException {
 	
 		MapSqlParameterSource namedParameters = new MapSqlParameterSource();
-		namedParameters.addValue(COL.VIEW_NAME, viewName);
-		namedParameters.addValue(COL.CREATED_BY, userName);
-		putNotEmpty(namedParameters, COL.BUCKET_ID, bucketId);
-		putNotEmpty(namedParameters, COL.CLASS_ID, classId);
-		putNotEmpty(namedParameters, COL.COLUMNS_ID, columnsId);
-		putNotEmpty(namedParameters, COL.FILTER_ID, filterId);
-		putNotEmpty(namedParameters, COL.DESCRIPTION, description);
+		namedParameters.addValue(Column.VIEW_NAME, viewName);
+		namedParameters.addValue(Column.CREATED_BY, userName);
+		putNotEmpty(namedParameters, Column.BUCKET_ID, bucketId);
+		putNotEmpty(namedParameters, Column.CLASS_ID, classId);
+		putNotEmpty(namedParameters, Column.COLUMNS_ID, columnsId);
+		putNotEmpty(namedParameters, Column.FILTER_ID, filterId);
+		putNotEmpty(namedParameters, Column.DESCRIPTION, description);
 		
 		KeyHolder keyHolder = new GeneratedKeyHolder();
 		Query query = new Query(TAB.VIEW, true).insertIntoValues(namedParameters);	
 		
 		try {
-			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {COL.VIEW_ID});	
+			jdbcTemplate.update(query.toString(logger), namedParameters, keyHolder, new String[] {Column.VIEW_ID});
 			return keyHolder.getKey().intValue();
 		} catch (BadSqlGrammarException e) {
 			throw new UnexpectedException(e);
@@ -1845,11 +1849,11 @@ public class DatabucketServiceIm implements DatabucketService {
 	}
 
 	public int deleteView(String userName, int viewId) throws UnknownColumnException {
-		Condition condition = new Condition(COL.VIEW_ID, Operator.equal, viewId);
+		Condition condition = new Condition(Column.VIEW_ID, Operator.equal, viewId);
 
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.DELETED, true);
-		paramMap.put(COL.UPDATED_BY, userName);
+		paramMap.put(Column.DELETED, true);
+		paramMap.put(Column.UPDATED_BY, userName);
 
 		// Set view as deleted
 		Query query = new Query(TAB.VIEW, true)
@@ -1869,15 +1873,15 @@ public class DatabucketServiceIm implements DatabucketService {
 			if (columnsId != null && columnsId > 0 && !isColumnsExist(columnsId))
 				throw new ItemDoNotExistsException("Columns", columnsId);
 			
-			Condition condition = new Condition(COL.VIEW_ID, Operator.equal, viewId);
+			Condition condition = new Condition(Column.VIEW_ID, Operator.equal, viewId);
 			Map<String, Object> paramMap = new HashMap<String, Object>();
-			paramMap.put(COL.UPDATED_BY, updatedBy);
-			putNotEmptyNullableInteger(paramMap, COL.BUCKET_ID, bucketId);
-			putNotEmptyNullableInteger(paramMap, COL.CLASS_ID, classId);
-			putNotEmptyNullableInteger(paramMap, COL.COLUMNS_ID, columnsId);
-			putNotEmptyNullableInteger(paramMap, COL.FILTER_ID, filterId);
-			putNotEmpty(paramMap, COL.VIEW_NAME, viewName);
-			putNotEmpty(paramMap, COL.DESCRIPTION, description);
+			paramMap.put(Column.UPDATED_BY, updatedBy);
+			putNotEmptyNullableInteger(paramMap, Column.BUCKET_ID, bucketId);
+			putNotEmptyNullableInteger(paramMap, Column.CLASS_ID, classId);
+			putNotEmptyNullableInteger(paramMap, Column.COLUMNS_ID, columnsId);
+			putNotEmptyNullableInteger(paramMap, Column.FILTER_ID, filterId);
+			putNotEmpty(paramMap, Column.VIEW_NAME, viewName);
+			putNotEmpty(paramMap, Column.DESCRIPTION, description);
 			
 			Query query = new Query(TAB.VIEW, true)
 					.update()
@@ -1893,13 +1897,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	public Map<String, Object> getViews(Optional<String> bucketName, Optional<Integer> viewId, Optional<Integer> page, Optional<Integer> limit, Optional<String> sort, List<Condition> urlConditions) throws JsonParseException, JsonMappingException, IOException, ItemDoNotExistsException, UnexpectedException, UnknownColumnException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 
 		if (viewId.isPresent()) {
-			conditions.add(new Condition(COL.VIEW_ID, Operator.equal, viewId.get()));
+			conditions.add(new Condition(Column.VIEW_ID, Operator.equal, viewId.get()));
 		} else if (bucketName.isPresent()) {
 			int bucketId = getBucketId(bucketName.get());
-			conditions.add(new Condition(COL.BUCKET_ID, Operator.equal, bucketId));
+			conditions.add(new Condition(Column.BUCKET_ID, Operator.equal, bucketId));
 		} 
 
 		if (urlConditions != null)			
@@ -1919,9 +1923,9 @@ public class DatabucketServiceIm implements DatabucketService {
 				.limitPage(paramMap, limit, page);
 
 		Map<String, Object> result = new HashMap<String, Object>();
-		result.put(C.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
+		result.put(Constants.TOTAL, jdbcTemplate.queryForObject(queryCount.toString(logger), paramMap, Long.TYPE));
 		List<Map<String, Object>> viewsList = jdbcTemplate.queryForList(queryData.toString(logger), paramMap);
-		result.put(C.VIEWS, viewsList);
+		result.put(Constants.VIEWS, viewsList);
 
 		return result;		
 	}
@@ -1930,7 +1934,7 @@ public class DatabucketServiceIm implements DatabucketService {
 	private List<Condition> getFilterConditions(int filterId) throws UnexpectedException, UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
 		Map<String, Object> filter = getFilter(filterId);
-		List<Map<String, Object>> filterConditions = (List<Map<String, Object>>) filter.get(COL.CONDITIONS);
+		List<Map<String, Object>> filterConditions = (List<Map<String, Object>>) filter.get(Column.CONDITIONS);
 		for (Map<String, Object> filterCond: filterConditions)
 			conditions.add(new Condition(filterCond));
 		return conditions;
@@ -1938,8 +1942,8 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private Map<String, Object> getView(int viewId) throws UnexpectedException, UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.VIEW_ID, Operator.equal, viewId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.VIEW_ID, Operator.equal, viewId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.VIEW, true)
@@ -1950,8 +1954,8 @@ public class DatabucketServiceIm implements DatabucketService {
 		List<Map<String, Object>> views = this.jdbcTemplate.queryForList(query.toString(logger), paramMap);
 		if (views != null && views.size() > 0) {
 			try {
-				convertStringToList(views, COL.CONDITIONS);
-				convertStringToList(views, COL.COLUMNS);
+				convertStringToList(views, Column.CONDITIONS);
+				convertStringToList(views, Column.COLUMNS);
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
 			}
@@ -1962,8 +1966,8 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private Map<String, Object> getFilter(int filterId) throws UnexpectedException, UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.FILTER_ID, Operator.equal, filterId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.FILTER_ID, Operator.equal, filterId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.FILTER, true)
@@ -1975,7 +1979,7 @@ public class DatabucketServiceIm implements DatabucketService {
 			
 		if (filters != null && filters.size() > 0) {
 			try {
-				convertStringToList(filters, COL.CONDITIONS);
+				convertStringToList(filters, Column.CONDITIONS);
 			} catch (Exception e) {
 				throw new UnexpectedException(e);
 			}
@@ -2008,19 +2012,19 @@ public class DatabucketServiceIm implements DatabucketService {
 	private Map<String, Object> getTaskActionsProperties(Map<String, Object> actions) {
 		Map<String, Object> resultMap = new HashMap<String, Object>();
 
-		List<Map<String, Object>> actionProperties = (List<Map<String, Object>>) actions.get(C.PROPERTIES);
+		List<Map<String, Object>> actionProperties = (List<Map<String, Object>>) actions.get(Constants.PROPERTIES);
 		if (actionProperties != null && actionProperties.size() > 0) {
 			List<String> propertiesToRemoveArray = new ArrayList<String>();
 			Map<String, Object> propertiesToModifyMap = new HashMap<String, Object>();
 
 			for (Map<String, Object> item : actionProperties) {
-				String action = (String) item.get(C.ACTION);
-				String path = (String) item.get(C.PATH);
-				if (action.equals(C.REMOVE))
+				String action = (String) item.get(Constants.ACTION);
+				String path = (String) item.get(Constants.PATH);
+				if (action.equals(Constants.REMOVE))
 					propertiesToRemoveArray.add(path);
-				else if (action.equals(C.SET)) {
-					String type = (String) item.get(C.TYPE);
-					String value = (String) item.get(C.VALUE);
+				else if (action.equals(Constants.SET)) {
+					String type = (String) item.get(Constants.TYPE);
+					String value = (String) item.get(Constants.VALUE);
 					if (type.equals("numeric"))
 						propertiesToModifyMap.put(path, Float.parseFloat(value));
 					else if (type.equals("boolean"))
@@ -2044,18 +2048,18 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private String getTaskModifyQuery(String eventName, String bucketName, List<Condition> conditions, Map<String, Object> actions) throws UnknownColumnException {
 		Map<String, Object> paramMap = new HashMap<String, Object>();
-		paramMap.put(COL.UPDATED_BY, eventName);
+		paramMap.put(Column.UPDATED_BY, eventName);
 
-		boolean setTag = (boolean) actions.get(C.SET_TAG);
+		boolean setTag = (boolean) actions.get(Constants.SET_TAG);
 		if (setTag) {
-			int tagId = (int) actions.get(C.TAG_ID);
-			paramMap.put(COL.TAG_ID, tagId);
+			int tagId = (int) actions.get(Constants.TAG_ID);
+			paramMap.put(Column.TAG_ID, tagId);
 		}
 
-		boolean setLock = (boolean) actions.get(C.SET_LOCK);
+		boolean setLock = (boolean) actions.get(Constants.SET_LOCK);
 		if (setLock) {
-			boolean locked = (boolean) actions.get(C.LOCK);
-			paramMap.put(COL.LOCKED, locked);
+			boolean locked = (boolean) actions.get(Constants.LOCK);
+			paramMap.put(Column.LOCKED, locked);
 		}
 
 		boolean joinTags = usedTagNameColumn(conditions);
@@ -2092,22 +2096,22 @@ public class DatabucketServiceIm implements DatabucketService {
 		eventQuery += "\tON SCHEDULE\n";
 		
 		// Schedule
-		boolean periodically = (boolean) schedule.get(C.PERIODICALLY);
+		boolean periodically = (boolean) schedule.get(Constants.PERIODICALLY);
 		if (periodically) {
-			String starts = getFormattedDate((String) schedule.get(C.STARTS));
-			Map<String, Object> interval = (Map<String, Object>) schedule.get(C.INTERVAL);
-			int amount = (int) interval.get(C.AMOUNT);
-			String unit = getUnit((int) interval.get(C.UNIT));
+			String starts = getFormattedDate((String) schedule.get(Constants.STARTS));
+			Map<String, Object> interval = (Map<String, Object>) schedule.get(Constants.INTERVAL);
+			int amount = (int) interval.get(Constants.AMOUNT);
+			String unit = getUnit((int) interval.get(Constants.UNIT));
 			eventQuery += "\tEVERY " + amount + " " + unit + "\n";
 			eventQuery += "\tSTARTS '" + starts + "'\n";
 			
-			boolean enabled_end = (boolean) schedule.get(C.ENABLE_ENDS);
+			boolean enabled_end = (boolean) schedule.get(Constants.ENABLE_ENDS);
 			if (enabled_end) {
-				String ends = getFormattedDate((String) schedule.get(C.ENDS));
+				String ends = getFormattedDate((String) schedule.get(Constants.ENDS));
 				eventQuery += "\tENDS '" + ends + "'\n";
 			}
 		} else {
-			String at = getFormattedDate((String) schedule.get(C.STARTS));
+			String at = getFormattedDate((String) schedule.get(Constants.STARTS));
 			eventQuery += "\tAT '" + at + "'\n";
 		}
 		
@@ -2118,25 +2122,25 @@ public class DatabucketServiceIm implements DatabucketService {
 		for (Map<String, Object> tableTask : tasks) {
 			int taskId = Integer.parseInt((String) tableTask.get("task_id"));
 			Map<String, Object> task = getTask(taskId);
-			String taskName = (String) task.get(COL.TASK_NAME);
-			Map<String, Object> configuration = (Map<String, Object>) task.get(C.CONFIGURATION);
+			String taskName = (String) task.get(Column.TASK_NAME);
+			Map<String, Object> configuration = (Map<String, Object>) task.get(Constants.CONFIGURATION);
 			List<Condition> conditions = FieldValidator.validateListOfConditions(configuration, false);
-			Map<String, Object> actions = (Map<String, Object>) configuration.get(C.ACTIONS);
-			String actionType = (String) actions.get(C.TYPE);
-			if (actionType.equals(C.MODIFY)) {
+			Map<String, Object> actions = (Map<String, Object>) configuration.get(Constants.ACTIONS);
+			String actionType = (String) actions.get(Constants.TYPE);
+			if (actionType.equals(Constants.MODIFY)) {
 				for (Map<String, Object> bucket : buckets) {
-					int bucketId = (int) bucket.get(COL.BUCKET_ID);
-					String bucketName = (String) bucket.get(COL.BUCKET_NAME);					
+					int bucketId = (int) bucket.get(Column.BUCKET_ID);
+					String bucketName = (String) bucket.get(Column.BUCKET_NAME);
 					String modifyQuery = getTaskModifyQuery(eventName, bucketName, conditions, actions);
 					eventQuery += "\t\t/* Task: '" + taskName + "' for bucket '" + bucketName + "' */\n";
 					eventQuery += "\t\t" + modifyQuery + ";\n";
 					eventQuery += "\t\tSELECT row_count() INTO @affected_rows;\n";
 					eventQuery += "\t\tINSERT INTO `_event_log` (`event_id`, `task_id`, `bucket_id`, `affected`) VALUES (" + eventId + ", " + taskId + ", " + bucketId + ", @affected_rows);\n\n";
 				}
-			} else if (actionType.equals(C.REMOVE)) {
+			} else if (actionType.equals(Constants.REMOVE)) {
 				for (Map<String, Object> bucket : buckets) {
-					int bucketId = (int) bucket.get(COL.BUCKET_ID);
-					String bucketName = (String) bucket.get(COL.BUCKET_NAME);
+					int bucketId = (int) bucket.get(Column.BUCKET_ID);
+					String bucketName = (String) bucket.get(Column.BUCKET_NAME);
 					String removeQuery = getTaskRemoveQuery(bucketName, conditions);
 					eventQuery += "\t\t/* Task: '" + taskName + "' for bucket '" + bucketName + "' */\n";
 					eventQuery += "\t\t" + removeQuery + ";\n";
@@ -2180,13 +2184,13 @@ public class DatabucketServiceIm implements DatabucketService {
 
 	private boolean isBucketExist(String bucketName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.BUCKET, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2196,13 +2200,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isHistoryEnabled(String bucketName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.BUCKET, true)
-				.select(COL.HISTORY)
+				.select(Column.HISTORY)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2211,13 +2215,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private int getBucketId(String bucketName) throws ItemDoNotExistsException, UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.BUCKET_NAME, Operator.equal, bucketName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.BUCKET_NAME, Operator.equal, bucketName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.BUCKET, true)
-				.select(COL.BUCKET_ID)
+				.select(Column.BUCKET_ID)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2230,12 +2234,12 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private int getTagId(String tagName) throws ItemDoNotExistsException, UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.TAG_NAME, Operator.equal, tagName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.TAG_NAME, Operator.equal, tagName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.TAG, true)
-				.select(COL.TAG_ID)
+				.select(Column.TAG_ID)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2248,13 +2252,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 //	private boolean isActiveEventExist() throws UnknownColumnException {
 //		List<Condition> conditions = new ArrayList<Condition>();
-//		conditions.add(new Condition(COL.ACTIVE, Operator.equal, true));
-//		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+//		conditions.add(new Condition(Column.ACTIVE, Operator.equal, true));
+//		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 //		
 //		Map<String, Object> paramMap = new HashMap<String, Object>();
 //		
 //		Query query = new Query(TAB.EVENT, true)
-//				.select(COL.COUNT)
+//				.select(Column.COUNT)
 //				.from()
 //				.where(conditions, paramMap);	
 //		
@@ -2265,13 +2269,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isTagExist(Integer tagId) throws UnknownColumnException {		
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.TAG_ID, Operator.equal, tagId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.TAG_ID, Operator.equal, tagId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.TAG, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);	
 		
@@ -2282,16 +2286,16 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isTagExist(Integer tagId, String tagName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.TAG_NAME, Operator.equal, tagName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.TAG_NAME, Operator.equal, tagName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (tagId != null)
-			conditions.add(new Condition(COL.TAG_ID, Operator.notEqual, tagId));
+			conditions.add(new Condition(Column.TAG_ID, Operator.notEqual, tagId));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.TAG, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2302,16 +2306,16 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isEventExist(Integer eventId, String eventName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.EVENT_NAME, Operator.equal, eventName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.EVENT_NAME, Operator.equal, eventName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (eventId != null)
-			conditions.add(new Condition(COL.EVENT_ID, Operator.notEqual, eventId));
+			conditions.add(new Condition(Column.EVENT_ID, Operator.notEqual, eventId));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.EVENT, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2349,16 +2353,16 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isGroupExist(Integer groupId, String groupName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.GROUP_NAME, Operator.equal, groupName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.GROUP_NAME, Operator.equal, groupName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (groupId != null)
-			conditions.add(new Condition(COL.GROUP_ID, Operator.notEqual, groupId));
+			conditions.add(new Condition(Column.GROUP_ID, Operator.notEqual, groupId));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.GROUP, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2369,16 +2373,16 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isClassExist(Integer classId, String className) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.CLASS_NAME, Operator.equal, className));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.CLASS_NAME, Operator.equal, className));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		if (classId != null)
-			conditions.add(new Condition(COL.CLASS_ID, Operator.notEqual, classId));
+			conditions.add(new Condition(Column.CLASS_ID, Operator.notEqual, classId));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.CLASS, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2389,13 +2393,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isColumnsExist(Integer columnsId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.COLUMNS_ID, Operator.equal, columnsId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.COLUMNS_ID, Operator.equal, columnsId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.COLUMNS, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2406,13 +2410,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isFilterExist(Integer filterId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.FILTER_ID, Operator.equal, filterId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.FILTER_ID, Operator.equal, filterId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.FILTER, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2424,12 +2428,12 @@ public class DatabucketServiceIm implements DatabucketService {
 	private boolean isItemExist(String table, String column, Integer id) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
 		conditions.add(new Condition(column, Operator.equal, id));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(table, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2440,13 +2444,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isTaskExist(Integer taskId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.TASK_ID, Operator.equal, taskId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.TASK_ID, Operator.equal, taskId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.TASK, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2457,13 +2461,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isGroupExist(Integer groupId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.GROUP_ID, Operator.equal, groupId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.GROUP_ID, Operator.equal, groupId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.GROUP, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2474,13 +2478,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isClassExist(Integer classId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.CLASS_ID, Operator.equal, classId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.CLASS_ID, Operator.equal, classId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.CLASS, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2491,13 +2495,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isColumnsExist(String columnsName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.COLUMNS_NAME, Operator.equal, columnsName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.COLUMNS_NAME, Operator.equal, columnsName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.COLUMNS, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2508,13 +2512,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isFilterExist(String filterName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.FILTER_NAME, Operator.equal, filterName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.FILTER_NAME, Operator.equal, filterName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.FILTER, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2525,13 +2529,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isGroupExist(String groupName) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.GROUP_NAME, Operator.equal, groupName));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.GROUP_NAME, Operator.equal, groupName));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.GROUP, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2542,13 +2546,13 @@ public class DatabucketServiceIm implements DatabucketService {
 	
 	private boolean isClassExist(String className) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.CLASS_NAME, Operator.equal, className));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.CLASS_NAME, Operator.equal, className));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 		
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 		
 		Query query = new Query(TAB.CLASS, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);		
 		
@@ -2559,13 +2563,13 @@ public class DatabucketServiceIm implements DatabucketService {
 
 	private boolean isViewExist(Integer viewId) throws UnknownColumnException {
 		List<Condition> conditions = new ArrayList<Condition>();
-		conditions.add(new Condition(COL.VIEW_ID, Operator.equal, viewId));
-		conditions.add(new Condition(COL.DELETED, Operator.equal, false));
+		conditions.add(new Condition(Column.VIEW_ID, Operator.equal, viewId));
+		conditions.add(new Condition(Column.DELETED, Operator.equal, false));
 						
 		Map<String, Object> paramMap = new HashMap<String, Object>();
 				
 		Query query = new Query(TAB.VIEW, true)
-				.select(COL.COUNT)
+				.select(Column.COUNT)
 				.from()
 				.where(conditions, paramMap);
 		
@@ -2662,13 +2666,13 @@ public class DatabucketServiceIm implements DatabucketService {
 		String tagName = null;
 		
 		for (Map<String, Object> map : source) {
-			if (map.get(COL.TAG_ID) != null)
-				tagId = (Integer) map.get(COL.TAG_ID);
+			if (map.get(Column.TAG_ID) != null)
+				tagId = (Integer) map.get(Column.TAG_ID);
 			else
 				tagId = null;
 			
-			if (map.get(COL.TAG_NAME) != null) {
-				tagName = (String) map.get(COL.TAG_NAME);
+			if (map.get(Column.TAG_NAME) != null) {
+				tagName = (String) map.get(Column.TAG_NAME);
 				key = tagName;
 			} else {
 				tagName = null;
@@ -2676,20 +2680,20 @@ public class DatabucketServiceIm implements DatabucketService {
 			}
 			
 			if (tempMap.containsKey(key)) {
-				if ((Boolean) map.get(COL.LOCKED))
-					tempMap.get(key).put("locked", map.get(COL.COUNT));
+				if ((Boolean) map.get(Column.LOCKED))
+					tempMap.get(key).put("locked", map.get(Column.COUNT));
 				else
-					tempMap.get(key).put("unlocked", map.get(COL.COUNT));
+					tempMap.get(key).put("unlocked", map.get(Column.COUNT));
 			} else {
 				Map<String, Object> tempMapItem = new HashMap<String, Object>();
-				tempMapItem.put(COL.TAG_ID, tagId);
-				tempMapItem.put(COL.TAG_NAME, tagName);
-				if ((Boolean) map.get(COL.LOCKED)) {
-					tempMapItem.put("locked", map.get(COL.COUNT));
+				tempMapItem.put(Column.TAG_ID, tagId);
+				tempMapItem.put(Column.TAG_NAME, tagName);
+				if ((Boolean) map.get(Column.LOCKED)) {
+					tempMapItem.put("locked", map.get(Column.COUNT));
 					tempMapItem.put("unlocked", 0);
 				} else {
 					tempMapItem.put("locked", 0);
-					tempMapItem.put("unlocked", map.get(COL.COUNT));
+					tempMapItem.put("unlocked", map.get(Column.COUNT));
 				}
 				tempMap.put(key, tempMapItem);
 			}			
@@ -2753,7 +2757,7 @@ public class DatabucketServiceIm implements DatabucketService {
 	private boolean usedTagNameColumn(List<Condition> urlConditions) {
 		if (urlConditions != null)
 			for (Condition condition : urlConditions)
-				if (condition.getLeftValue().equals(COL.TAG_NAME))
+				if (condition.getLeftValue().equals(Column.TAG_NAME))
 					return true;
 		return false;
 	}
@@ -2768,52 +2772,52 @@ public class DatabucketServiceIm implements DatabucketService {
 	}
 	
 	private String[] getViewColumns() {
-		String[] columns = { COL.VIEW_ID, COL.VIEW_NAME, COL.DESCRIPTION, COL.CLASS_ID, COL.BUCKET_ID, COL.FILTER_ID, COL.COLUMNS_ID, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY };
+		String[] columns = { Column.VIEW_ID, Column.VIEW_NAME, Column.DESCRIPTION, Column.CLASS_ID, Column.BUCKET_ID, Column.FILTER_ID, Column.COLUMNS_ID, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY };
 		return columns;
 	}
 	
 	private String[] getColumnsColumns() {
-		String[] columns = { COL.COLUMNS_ID, COL.COLUMNS_NAME, COL.CLASS_ID, COL.BUCKET_ID, COL.COLUMNS, COL.DESCRIPTION, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY };
+		String[] columns = { Column.COLUMNS_ID, Column.COLUMNS_NAME, Column.CLASS_ID, Column.BUCKET_ID, Column.COLUMNS, Column.DESCRIPTION, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY };
 		return columns;		
 	}
 	
 	private String[] getFilterColumns() {
-		String[] columns = { COL.FILTER_ID, COL.FILTER_NAME, COL.CLASS_ID, COL.BUCKET_ID, COL.CONDITIONS, COL.DESCRIPTION, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY };
+		String[] columns = { Column.FILTER_ID, Column.FILTER_NAME, Column.CLASS_ID, Column.BUCKET_ID, Column.CONDITIONS, Column.DESCRIPTION, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY };
 		return columns;		
 	}
 	
 	private String[] getTagColumns() {
-		String[] columns = {COL.TAG_ID,COL.TAG_NAME, COL.CLASS_ID, COL.BUCKET_ID,COL.DESCRIPTION,COL.CREATED_AT,COL.CREATED_BY,COL.UPDATED_AT,COL.UPDATED_BY };
+		String[] columns = {Column.TAG_ID, Column.TAG_NAME, Column.CLASS_ID, Column.BUCKET_ID, Column.DESCRIPTION, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY };
 		return columns;
 	}
 	
 	private String[] getBucketColumns() {
-		String[] columns = { COL.BUCKET_ID, COL.BUCKET_NAME, COL.CLASS_ID, COL.INDEX, COL.DESCRIPTION, COL.ICON_NAME, COL.HISTORY, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY};
+		String[] columns = { Column.BUCKET_ID, Column.BUCKET_NAME, Column.CLASS_ID, Column.INDEX, Column.DESCRIPTION, Column.ICON_NAME, Column.HISTORY, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY};
 		return columns;
 	}
 	
 	private String[] getGroupColumns() {
-		String[] columns = { COL.GROUP_ID, COL.GROUP_NAME, COL.DESCRIPTION, COL.BUCKETS, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY};
+		String[] columns = { Column.GROUP_ID, Column.GROUP_NAME, Column.DESCRIPTION, Column.BUCKETS, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY};
 		return columns;
 	}
 	
 	private String[] getClassColumns() {
-		String[] columns = { COL.CLASS_ID, COL.CLASS_NAME, COL.DESCRIPTION, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY};
+		String[] columns = { Column.CLASS_ID, Column.CLASS_NAME, Column.DESCRIPTION, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY};
 		return columns;
 	}
 	
 	private String[] getTaskColumns() {
-		String[] columns = { COL.TASK_ID, COL.TASK_NAME, COL.CLASS_ID, COL.BUCKET_ID, COL.DESCRIPTION, COL.CONFIGURATION, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY};
+		String[] columns = { Column.TASK_ID, Column.TASK_NAME, Column.CLASS_ID, Column.BUCKET_ID, Column.DESCRIPTION, Column.CONFIGURATION, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY};
 		return columns;
 	}
 	
 	private String[] getEventsColumns() {
-		String[] events = { COL.EVENT_ID, COL.EVENT_NAME, COL.CLASS_ID, COL.BUCKET_ID, COL.DESCRIPTION, COL.SCHEDULE, COL.TASKS, COL.ACTIVE, COL.CREATED_AT, COL.CREATED_BY, COL.UPDATED_AT, COL.UPDATED_BY};
+		String[] events = { Column.EVENT_ID, Column.EVENT_NAME, Column.CLASS_ID, Column.BUCKET_ID, Column.DESCRIPTION, Column.SCHEDULE, Column.TASKS, Column.ACTIVE, Column.CREATED_AT, Column.CREATED_BY, Column.UPDATED_AT, Column.UPDATED_BY};
 		return events;
 	}
 	
 	private String[] getEventsLogColumns() {
-		String[] events = { COL.EVENT_LOG_ID, COL.EVENT_ID, COL.TASK_ID, COL.BUCKET_ID, COL.AFFECTED, COL.CREATED_AT};
+		String[] events = { Column.EVENT_LOG_ID, Column.EVENT_ID, Column.TASK_ID, Column.BUCKET_ID, Column.AFFECTED, Column.CREATED_AT};
 		return events;
 	}
 			

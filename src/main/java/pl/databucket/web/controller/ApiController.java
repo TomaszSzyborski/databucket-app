@@ -37,8 +37,8 @@ import pl.databucket.exception.IncorrectValueException;
 import pl.databucket.exception.TagAlreadyExistsException;
 import pl.databucket.exception.UnknownColumnException;
 import pl.databucket.exception.ViewAlreadyExistsException;
-import pl.databucket.web.database.C;
-import pl.databucket.web.database.COL;
+import pl.databucket.web.database.Constants;
+import pl.databucket.web.database.Column;
 import pl.databucket.web.database.Condition;
 import pl.databucket.web.database.FieldValidator;
 import pl.databucket.web.service.DatabucketService;
@@ -55,14 +55,11 @@ public class ApiController {
 	
 	@Value("${databucket.title}")
 	private String title;
+
 	
-//	@Autowired
-//	private BuildProperties buildProperties;
+	private final Logger logger = LoggerFactory.getLogger(ApiController.class);
 	
-	
-	Logger logger = LoggerFactory.getLogger(ApiController.class);
-	
-	//--------------------------------------- C O N F I G U R A T I O N ---------------------------------------------
+	//--------------------------------------- Constants O N F I G U R A T I O N ---------------------------------------------
 	
 	@GetMapping(value = "/title", produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<ResponseBody> getTitle() {
@@ -169,13 +166,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getGroups(groupId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setGroups((List<Map<String, Object>>) result.get(C.GROUPS));
+			rb.setGroups((List<Map<String, Object>>) result.get(Constants.GROUPS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK); 
 		} catch (IncorrectValueException e) {
@@ -207,7 +204,7 @@ public class ApiController {
 		}
 	}
 	
-	//------------------------------------------- D A T A   C L A S S -----------------------------------------------
+	//------------------------------------------- D A T A   Constants L A S S -----------------------------------------------
 
 	@PostMapping(value = "/classes", produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<ResponseBody> createClass(
@@ -283,13 +280,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getClasses(classId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setClasses((List<Map<String, Object>>) result.get(C.CLASSES));
+			rb.setClasses((List<Map<String, Object>>) result.get(Constants.CLASSES));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK); 
 		} catch (IncorrectValueException e) {
@@ -321,7 +318,7 @@ public class ApiController {
 		}
 	}
 	
-	//---------------------------------------------- B U C K E T S --------------------------------------------------
+	//---------------------------------------------- B U Constants K E T S --------------------------------------------------
 	
 	@PostMapping(value = "/buckets", produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<ResponseBody> createBucket(
@@ -334,11 +331,11 @@ public class ApiController {
 			Integer index = FieldValidator.validateIndex(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			String iconName = FieldValidator.validateIcon(body, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			boolean history = false;
-			if (body.containsKey(COL.HISTORY))
-				history = (boolean) body.get(COL.HISTORY);
+			if (body.containsKey(Column.HISTORY))
+				history = (boolean) body.get(Column.HISTORY);
 			
 			int bucketId = databucketService.createBucket(userName, bucketName, index, description, iconName, history, classId);
 			rb.setStatus(ResponseStatus.OK);
@@ -401,13 +398,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getBuckets(bucketName, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setBuckets((List<Map<String, Object>>) result.get(C.BUCKETS));
+			rb.setBuckets((List<Map<String, Object>>) result.get(Constants.BUCKETS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK); 
 		} catch (IncorrectValueException e) {
@@ -464,12 +461,12 @@ public class ApiController {
 		ResponseBody rb = new ResponseBody();
 		
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
 			String bucketName = FieldValidator.validateBucketName(body, false);
 			String tagName = FieldValidator.validateTagName(body, true);
 			String description = FieldValidator.validateDescription(body, false);
 			String iconName = FieldValidator.validateIcon(body, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			Integer tagId = databucketService.createTag(userName, tagName, bucketId, bucketName, iconName, description, classId);
 			rb.setStatus(ResponseStatus.OK);
@@ -540,13 +537,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getTags(bucketName, tagId, page, limit, sort, urlConditions);
 			
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 			
-			rb.setTags((List<Map<String, Object>>) result.get(C.TAGS));
+			rb.setTags((List<Map<String, Object>>) result.get(Constants.TAGS));
 						
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e1) {
@@ -567,8 +564,8 @@ public class ApiController {
 		ResponseBody rb = new ResponseBody();
 		
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			String tagName = FieldValidator.validateTagName(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			
@@ -585,7 +582,7 @@ public class ApiController {
 		}
 	}
 	
-	//---------------------------------------------- C O L U M N S --------------------------------------------------
+	//---------------------------------------------- Constants O L U M N S --------------------------------------------------
 	
 	@PostMapping(value = "/columns", produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<ResponseBody> createColumns(
@@ -595,10 +592,10 @@ public class ApiController {
 		
 		try {
 			String columnsName = FieldValidator.validateColumnsName(body, true);
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);			
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
 			List<Map<String, Object>> columns = FieldValidator.validateColumns(body, true);
 			String description = FieldValidator.validateDescription(body, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			int columnsId = databucketService.createColumns(columnsName, bucketId, userName, columns, description, classId);
 			rb.setStatus(ResponseStatus.OK);
@@ -666,13 +663,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getColumns(bucketName, columnsId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setColumns((List<Map<String, Object>>) result.get(C.COLUMNS));
+			rb.setColumns((List<Map<String, Object>>) result.get(Constants.COLUMNS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e) {
@@ -691,8 +688,8 @@ public class ApiController {
 			@RequestBody LinkedHashMap<String, Object> body) {
 		ResponseBody rb = new ResponseBody();
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			String columnsName = FieldValidator.validateColumnsName(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			List<Map<String, Object>> columns = FieldValidator.validateColumns(body, false);
@@ -722,12 +719,12 @@ public class ApiController {
 		try {
 			String filterName = FieldValidator.validateFilterName(body, true);
 			Integer bucketId = null;
-			if (body.containsKey(COL.BUCKET_ID))
-				bucketId = (Integer) body.get(COL.BUCKET_ID);
+			if (body.containsKey(Column.BUCKET_ID))
+				bucketId = (Integer) body.get(Column.BUCKET_ID);
 			
 			List<Map<String, Object>> conditions = FieldValidator.validateConditions(body, true);
 			String description = FieldValidator.validateDescription(body, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);		
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			int filterId = databucketService.createFilter(filterName, bucketId, userName, conditions, description, classId);
 			rb.setStatus(ResponseStatus.OK);
@@ -795,13 +792,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getFilters(bucketName, filterId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setFilters((List<Map<String, Object>>) result.get(C.FILTERS));
+			rb.setFilters((List<Map<String, Object>>) result.get(Constants.FILTERS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e) {
@@ -820,8 +817,8 @@ public class ApiController {
 			@RequestBody LinkedHashMap<String, Object> body) {
 		ResponseBody rb = new ResponseBody();
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			String filterName = FieldValidator.validateFilterName(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			List<Map<String, Object>> conditions = FieldValidator.validateConditions(body, false);
@@ -1212,10 +1209,10 @@ public class ApiController {
 		
 		try {
 			String viewName = FieldValidator.validateViewName(body, true);			
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);			
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
-			Integer columnsId = FieldValidator.validateNullableId(body, COL.COLUMNS_ID, false);
-			Integer filterId = FieldValidator.validateNullableId(body, COL.FILTER_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
+			Integer columnsId = FieldValidator.validateNullableId(body, Column.COLUMNS_ID, false);
+			Integer filterId = FieldValidator.validateNullableId(body, Column.FILTER_ID, false);
 			String description = FieldValidator.validateDescription(body, false);
 			
 			Integer viewId = databucketService.createView(userName, viewName, description, bucketId, classId, columnsId, filterId);
@@ -1253,10 +1250,10 @@ public class ApiController {
 			@RequestBody LinkedHashMap<String, Object> body) {
 		ResponseBody rb = new ResponseBody();
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
-			Integer columnsId = FieldValidator.validateNullableId(body, COL.COLUMNS_ID, false);
-			Integer filterId = FieldValidator.validateNullableId(body, COL.FILTER_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
+			Integer columnsId = FieldValidator.validateNullableId(body, Column.COLUMNS_ID, false);
+			Integer filterId = FieldValidator.validateNullableId(body, Column.FILTER_ID, false);
 			String description = FieldValidator.validateDescription(body, false);
 			String viewName = FieldValidator.validateViewName(body, false);
 			
@@ -1305,13 +1302,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getViews(bucketName, viewId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setViews((List<Map<String, Object>>) result.get(C.VIEWS));
+			rb.setViews((List<Map<String, Object>>) result.get(Constants.VIEWS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e) {
@@ -1336,8 +1333,8 @@ public class ApiController {
 			String taskName = FieldValidator.validateTaskName(body, true);
 			Map<String, Object> configuration = FieldValidator.validateTaskConfiguration(body, true);
 			String description = FieldValidator.validateDescription(body, false);
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);			
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			int taskId = databucketService.createTask(taskName, bucketId, classId, userName, description, configuration);
 			rb.setStatus(ResponseStatus.OK);
@@ -1405,13 +1402,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getTasks(bucketName, taskId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setTasks((List<Map<String, Object>>) result.get(C.TASKS));
+			rb.setTasks((List<Map<String, Object>>) result.get(Constants.TASKS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e) {
@@ -1430,8 +1427,8 @@ public class ApiController {
 			@RequestBody LinkedHashMap<String, Object> body) {
 		ResponseBody rb = new ResponseBody();
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			String taskName = FieldValidator.validateTaskName(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			LinkedHashMap<String, Object> configuration = FieldValidator.validateTaskConfiguration(body, false);
@@ -1463,8 +1460,8 @@ public class ApiController {
 			Map<String, Object> schedule = FieldValidator.validateEventSchedule(body, true, active);
 			List<Map<String, Object>> tasks = FieldValidator.validateEventTasks(body, true);			
 			String description = FieldValidator.validateDescription(body, false);
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);			
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			
 			int eventId = databucketService.createEvent(eventName, bucketId, classId, userName, description, schedule, tasks, active);
 			rb.setStatus(ResponseStatus.OK);
@@ -1532,13 +1529,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getEvents(bucketName, eventId, page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setEvents((List<Map<String, Object>>) result.get(C.EVENTS));
+			rb.setEvents((List<Map<String, Object>>) result.get(Constants.EVENTS));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 		} catch (ItemDoNotExistsException e) {
@@ -1557,8 +1554,8 @@ public class ApiController {
 			@RequestBody LinkedHashMap<String, Object> body) {
 		ResponseBody rb = new ResponseBody();
 		try {
-			Integer bucketId = FieldValidator.validateNullableId(body, COL.BUCKET_ID, false);
-			Integer classId = FieldValidator.validateNullableId(body, COL.CLASS_ID, false);
+			Integer bucketId = FieldValidator.validateNullableId(body, Column.BUCKET_ID, false);
+			Integer classId = FieldValidator.validateNullableId(body, Column.CLASS_ID, false);
 			String eventName = FieldValidator.validateEventName(body, false);
 			String description = FieldValidator.validateDescription(body, false);
 			List<Map<String, Object>> tasks = FieldValidator.validateEventTasks(body, false);	
@@ -1612,13 +1609,13 @@ public class ApiController {
 			
 			Map<String, Object> result = databucketService.getEventsLog(page, limit, sort, urlConditions);
 				
-			long total = (long) result.get(C.TOTAL);
+			long total = (long) result.get(Constants.TOTAL);
 			rb.setTotal(total);
 						
 			if (page.isPresent() && limit.isPresent())
 				rb.setTotalPages((int) Math.ceil(total/(float) limit.get()));
 				
-			rb.setEventsLog((List<Map<String, Object>>) result.get(C.EVENTS_LOG));
+			rb.setEventsLog((List<Map<String, Object>>) result.get(Constants.EVENTS_LOG));
 			
 			return new ResponseEntity<ResponseBody>(rb, HttpStatus.OK);
 
@@ -1642,19 +1639,19 @@ public class ApiController {
 	}
 	
 	
-	//------------------------------------------ E X C E P T I O N S ------------------------------------------------
+	//------------------------------------------ E X Constants E P T I O N S ------------------------------------------------
 	
 	private ResponseEntity<ResponseBody> customException(ResponseBody rb, Exception e, HttpStatus status) {
 		logger.warn(e.getMessage());
 		rb.setStatus(ResponseStatus.FAILED);
 		rb.setMessage(e.getMessage());
-		return new ResponseEntity<ResponseBody>(rb, status);
+		return new ResponseEntity<>(rb, status);
 	}
 	
 	private ResponseEntity<ResponseBody> defaultException(ResponseBody rb, Exception e) {
 		logger.error("ERROR:", e);
 		rb.setStatus(ResponseStatus.FAILED);
 		rb.setMessage(e.getMessage());
-		return new ResponseEntity<ResponseBody>(rb, HttpStatus.INTERNAL_SERVER_ERROR);
+		return new ResponseEntity<>(rb, HttpStatus.INTERNAL_SERVER_ERROR);
 	}
 }

@@ -1,7 +1,9 @@
 package pl.databucket.web.database;
 
-public class COL {
-	
+public class Column {
+	private Column() {
+	}
+
 	public static final String COUNT = "count(*)";
 	
 	// Common columns
